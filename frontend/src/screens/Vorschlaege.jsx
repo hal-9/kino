@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, errorText } from '../api.js'
+import { api, errorText, newKey } from '../api.js'
 import { MutationError, QueryError } from '../components/QueryStatus.jsx'
 import Sheet from '../components/Sheet.jsx'
 import MovieSheet from '../components/MovieSheet.jsx'
@@ -18,14 +18,24 @@ function score(o) {
   return v.filter((x) => x === 'yes').length * 10 - v.filter((x) => x === 'no').length
 }
 
-function Proposal({ p, members, me }) {
+const ACTION = { created: 'vorgeschlagen', book: 'gebucht', reschedule: 'umgebucht', cancel: 'abgesagt', reopen: 'wieder geöffnet', ticket: 'Ticket-Link geändert' }
+const stamp = (sql) => new Date(sql.replace(' ', 'T') + 'Z').toLocaleString('de-DE', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })
+// 409 bei Lebenszyklus-Aktionen: jemand anderes war schneller oder der Status passt nicht mehr.
+const conflictText = (e) => (e.code === 'expired' ? 'Diese Vorstellung hat schon begonnen.' : e.status === 409 ? 'Inzwischen von jemand anderem geändert. Bitte prüfen und erneut wählen.' : errorText(e))
+
+function Proposal({ p, members, me, history }) {
   const qc = useQueryClient()
   const [pick, setPick] = useState(null)
   const [abo, setAbo] = useState(false)
   const [link, setLink] = useState('')
   const [info, setInfo] = useState(false)
   const [ticketSheet, setTicketSheet] = useState(false)
-  const refresh = () => qc.invalidateQueries({ queryKey: ['proposals'] })
+  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['proposals'] }), qc.invalidateQueries({ queryKey: ['proposal'] })])
+  // Ein Idempotency-Key je geöffneter Aktion; Wiederholung nach Netzabbruch liefert das Original.
+  const key = useRef(null)
+  const fresh = () => (key.current = newKey())
+  const lifecycle = (action, body = {}) => api.post(`/proposals/${p.id}/${action}`, { ...body, revision: p.revision }, { idempotencyKey: key.current ?? fresh() })
+  const settled = { onSuccess: () => { key.current = null; refresh() }, onError: (e) => { if (e.status === 409) { key.current = null; refresh() } } }
   // Stimmen je Option nacheinander senden, nur die jeweils neueste Absicht zählt: keine überholten Antworten,
   // keine umgeordneten Requests am Server. intent zeigt die Absicht bis zur Bestätigung.
   const [intent, setIntent] = useState({})
@@ -49,9 +59,24 @@ function Proposal({ p, members, me }) {
     await refresh()
     if (!q.sending) setIntent((x) => { const { [o]: _, ...rest } = x; return rest })
   }
-  const book = useMutation({ mutationFn: (option_id) => api.post(`/proposals/${p.id}/book`, { option_id, ticket_link: link.trim() || undefined }), onSuccess: () => { setPick(null); setLink(''); refresh() } })
+  const book = useMutation({
+    mutationFn: (option_id) => lifecycle(p.status === 'booked' ? 'reschedule' : 'book', { option_id, ticket_link: link.trim() || undefined }),
+    onSuccess: () => { setPick(null); setLink(''); settled.onSuccess() },
+    onError: settled.onError,
+  })
   const saveTicket = useMutation({ mutationFn: () => api.put(`/proposals/${p.id}/ticket`, { ticket_link: link.trim() || null }), onSuccess: () => { setTicketSheet(false); refresh() } })
-  const cancel = useMutation({ mutationFn: () => api.post(`/proposals/${p.id}/cancel`), onSuccess: refresh })
+  const cancel = useMutation({ mutationFn: () => lifecycle('cancel'), ...settled })
+  const reopen = useMutation({ mutationFn: () => lifecycle('reopen'), ...settled })
+  function confirmCancel() {
+    const text = p.status === 'booked'
+      ? 'Buchung in Kino absagen? Gekaufte Tickets werden dadurch nicht storniert oder erstattet, das geht nur beim Kino.'
+      : 'Vorschlag verwerfen? Er bleibt im Archiv und kann wieder geöffnet werden.'
+    if (confirm(text)) { fresh(); cancel.mutate() }
+  }
+  function confirmReopen() {
+    if (confirm('Wieder öffnen? Die Buchung wird aufgehoben, Stimmen bleiben erhalten.')) { fresh(); reopen.mutate() }
+  }
+  const openPick = () => { fresh(); book.reset(); setPick(p.booked_option_id ?? best?.id ?? p.options[0].id) }
 
   const best = p.status === 'open' ? [...p.options].sort((a, b) => score(b) - score(a))[0] : null
   const booked = p.options.find((o) => o.id === p.booked_option_id)
@@ -60,7 +85,7 @@ function Proposal({ p, members, me }) {
   return (
     <section className="group">
       <MovieHeader movie={p.movie} onInfo={() => setInfo(true)} />
-      <p className="status-line">{p.status === 'booked' ? '✓ gebucht' : 'offen'}</p>
+      <p className="status-line">{p.status === 'booked' ? '✓ gebucht' : p.status === 'cancelled' ? 'abgesagt' : 'offen'}</p>
       <div className="card">
         {p.note && <p className="note">{p.note}</p>}
         {p.options.map((o) => {
@@ -93,12 +118,13 @@ function Proposal({ p, members, me }) {
         })}
       </div>
       {voteError && <p className="stale" role="alert">Stimme nicht gespeichert. {errorText(voteError)}</p>}
-      <MutationError mutation={cancel} />
+      <MutationError mutation={cancel} text={conflictText} />
+      <MutationError mutation={reopen} text={conflictText} />
       <div className="sheet-actions">
         {p.status === 'open' && (
           <>
-            <button className="btn" onClick={() => cancel.mutate()}>Verwerfen</button>
-            <button className="btn primary" onClick={() => setPick(best?.id ?? p.options[0].id)}>Gebucht</button>
+            <button className="btn" disabled={cancel.isPending} onClick={confirmCancel}>Verwerfen</button>
+            <button className="btn primary" onClick={openPick}>Gebucht</button>
           </>
         )}
         {p.status === 'booked' && (
@@ -110,11 +136,22 @@ function Proposal({ p, members, me }) {
             <a className="btn" href={`/api/proposals/${p.id}.ics`}>.ics laden</a>
             <button className="btn" onClick={() => setAbo(true)}>Kalender abonnieren</button>
             {past && <Link className="btn" to="/besuche">Zum Besuch</Link>}
+            {!past && <button className="btn" onClick={openPick}>Umbuchen</button>}
+            {!past && <button className="btn" disabled={cancel.isPending} onClick={confirmCancel}>Absagen</button>}
+            {!past && <button className="btn" disabled={reopen.isPending} onClick={confirmReopen}>Wieder öffnen</button>}
           </>
         )}
+        {p.status === 'cancelled' && <button className="btn" disabled={reopen.isPending} onClick={confirmReopen}>Wieder öffnen</button>}
       </div>
 
       <MovieSheet movieId={info ? p.movie.id : null} onClose={() => setInfo(false)} />
+
+      {history?.length > 0 && (
+        <details className="history">
+          <summary>Verlauf</summary>
+          <ul>{history.map((e, i) => <li key={i}>{stamp(e.created_at)} · {e.user_name ?? '?'}: {ACTION[e.action] ?? e.action}</li>)}</ul>
+        </details>
+      )}
 
       <Sheet open={pick != null} onClose={() => setPick(null)} label="Welche Vorstellung ist gebucht?" dirty={link.trim() !== ''}>
         <h3>Welche Vorstellung ist gebucht?</h3>
@@ -126,7 +163,7 @@ function Proposal({ p, members, me }) {
           ))}
         </div>
         <input className="field" type="url" aria-label="Ticket-Link (optional)" placeholder="Ticket-Link aus der Bestätigungs-Mail (optional)" value={link} onChange={(e) => setLink(e.target.value)} />
-        <MutationError mutation={book} text={(e) => (e.code === 'expired' ? 'Diese Vorstellung hat schon begonnen.' : errorText(e))} />
+        <MutationError mutation={book} text={conflictText} />
         <div className="sheet-actions">
           <button className="btn" onClick={() => setPick(null)}>Abbrechen</button>
           <button className="btn primary" onClick={() => book.mutate(pick)} disabled={book.isPending}>Als gebucht speichern</button>
@@ -153,22 +190,45 @@ function Proposal({ p, members, me }) {
   )
 }
 
+// Detail (/vorschlaege/:id) kommt vom eigenen Endpunkt, unabhängig von Listen-/Archivfilter.
+function Detail({ id, me }) {
+  const detail = useQuery({ queryKey: ['proposal', id], queryFn: () => api.get(`/proposals/${id}`), refetchInterval: 10_000 })
+  const { data } = detail
+  return (
+    <>
+      <Link className="link-btn" to="/vorschlaege">← Alle Vorschläge</Link>
+      {!data && (detail.error?.status === 404
+        ? <div className="empty" role="alert"><h2>Vorschlag nicht gefunden</h2><p>Er existiert nicht oder gehört nicht zu eurer Gruppe.</p></div>
+        : detail.isError ? <QueryError query={detail} label="Vorschlag" /> : <p className="muted">Lädt…</p>)}
+      {data && <QueryError query={detail} label="Vorschlag" />}
+      {data && <Proposal p={data.proposal} members={data.members} me={me} history={data.history} />}
+    </>
+  )
+}
+
 export default function Vorschlaege() {
   const { id } = useParams()
+  const [archive, setArchive] = useState(false)
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: () => api.get('/me') })
-  const proposals = useQuery({ queryKey: ['proposals'], queryFn: () => api.get('/proposals'), refetchInterval: 10_000 })
+  const proposals = useQuery({ queryKey: ['proposals'], queryFn: () => api.get('/proposals'), refetchInterval: 10_000, enabled: !id })
+  const old = useQuery({ queryKey: ['proposals', 'archive'], queryFn: () => api.get('/proposals?view=archive'), enabled: archive && !id })
+  if (!me) return <p className="muted">Lädt…</p>
+  if (id) return <Detail id={Number(id)} me={me} />
   const { data } = proposals
   if (!data) return proposals.isError ? <QueryError query={proposals} label="Vorschläge" /> : <p className="muted">Lädt…</p>
-  if (!me) return <p className="muted">Lädt…</p>
-  const list = data.proposals.filter((p) => !id || p.id === Number(id))
   return (
     <>
       <QueryError query={proposals} label="Vorschläge" />
-      {id && <Link className="link-btn" to="/vorschlaege">← Alle Vorschläge</Link>}
-      {list.length === 0 && (
+      {data.proposals.length === 0 && (
         <div className="empty"><h2>Noch nichts vorgeschlagen</h2><p>Im Programm bei einer Vorstellung auf „Vorschlagen“ tippen.</p></div>
       )}
-      {list.map((p) => <Proposal key={p.id} p={p} members={data.members} me={me} />)}
+      {data.proposals.map((p) => <Proposal key={p.id} p={p} members={data.members} me={me} />)}
+      <button className="link-btn" aria-expanded={archive} onClick={() => setArchive(!archive)}>{archive ? 'Archiv ausblenden' : 'Archiv anzeigen'}</button>
+      {archive && (old.data
+        ? old.data.proposals.length === 0
+          ? <p className="muted">Archiv ist leer.</p>
+          : old.data.proposals.map((p) => <Proposal key={p.id} p={p} members={old.data.members} me={me} />)
+        : old.isError ? <QueryError query={old} label="Archiv" /> : <p className="muted">Lädt…</p>)}
     </>
   )
 }

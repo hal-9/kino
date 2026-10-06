@@ -11,22 +11,34 @@ const createSchema = z.object({
 })
 const voteSchema = z.object({ value: z.enum(['yes', 'maybe', 'no']) })
 const link = z.string().trim().url().max(500).refine((u) => /^https?:\/\//i.test(u))
-const bookSchema = z.object({ option_id: z.number().int(), ticket_link: link.nullish() })
-const ticketSchema = z.object({ ticket_link: link.nullable() })
+const revision = z.number().int().optional()
+const bookSchema = z.object({ option_id: z.number().int(), ticket_link: link.nullish(), revision })
+const ticketSchema = z.object({ ticket_link: link.nullable(), revision })
+const actionSchema = z.object({ revision }).default({})
 
-export function loadProposals(db, householdId, id) {
+// Planungsstatus (open/booked/cancelled) ist getrennt von Anwesenheit (Besuche). Erlaubte Übergänge:
+const FROM = { book: ['open'], reschedule: ['booked'], cancel: ['open', 'booked'], reopen: ['booked', 'cancelled'] }
+// Archiv nach Ereigniszeit: gebuchte Vorstellungen bleiben bis 60 Tage nach Beginn in der Liste, egal wie alt der Vorschlag ist.
+const ARCHIVE_AFTER_MS = 60 * 86400_000
+
+// view: 'active' (offen oder gebuchte Vorstellung nicht älter als 60 Tage), 'archive' (Rest), oder id = Einzelabruf ohne Filter.
+export function loadProposals(db, householdId, id, view = 'active') {
+  const active = `(p.status = 'open' OR (p.status = 'booked' AND datetime(json_extract(bo.snapshot_json, '$.starts_at')) > datetime(?)))`
+  const cutoff = new Date(Date.now() - ARCHIVE_AFTER_MS).toISOString()
   const rows = db
     .prepare(
       `SELECT p.*, m.title, m.year, m.runtime FROM proposals p JOIN movies m ON m.id = p.movie_id
-       WHERE p.household_id = ? AND ${id ? 'p.id = ?' : `p.status != 'cancelled' AND (p.status = 'open' OR datetime(p.updated_at) > datetime('now', '-60 days'))`}
-       ORDER BY p.created_at DESC, p.id DESC`
+       LEFT JOIN proposal_options bo ON bo.id = p.booked_option_id
+       WHERE p.household_id = ? AND ${id ? 'p.id = ?' : view === 'archive' ? `NOT ${active}` : active}
+       ORDER BY p.created_at DESC, p.id DESC ${view === 'archive' ? 'LIMIT 100' : ''}`
     )
-    .all(...(id ? [householdId, id] : [householdId]))
+    .all(householdId, id ?? cutoff)
   const opts = db.prepare('SELECT * FROM proposal_options WHERE proposal_id = ? ORDER BY id')
   const votes = db.prepare('SELECT user_id, value FROM votes WHERE option_id = ?')
   return rows.map((p) => ({
     id: p.id,
     status: p.status,
+    revision: p.revision,
     movie: { id: p.movie_id, title: p.title, year: p.year, runtime: p.runtime },
     note: p.note,
     created_by: p.created_by,
@@ -50,12 +62,63 @@ export function proposalsRouter(db) {
     return p
   }
 
+  const members = (hid) => db
+    .prepare('SELECT u.id, u.name FROM household_members m JOIN users u ON u.id = m.user_id WHERE m.household_id = ? ORDER BY m.joined_at, u.id')
+    .all(hid)
+
   router.get('/proposals', (req, res) => {
-    const members = db
-      .prepare('SELECT u.id, u.name FROM household_members m JOIN users u ON u.id = m.user_id WHERE m.household_id = ? ORDER BY m.joined_at, u.id')
-      .all(req.user.householdId)
-    res.json({ members, proposals: loadProposals(db, req.user.householdId) })
+    const view = req.query.view === 'archive' ? 'archive' : 'active'
+    res.json({ members: members(req.user.householdId), proposals: loadProposals(db, req.user.householdId, null, view) })
   })
+
+  // Einzelabruf unabhängig von Listen-/Archivfilter (Deep-Link); fremder Haushalt → 404.
+  router.get('/proposals/:id([0-9]+)', (req, res) => {
+    const p = own(req, res)
+    if (!p) return
+    const history = db
+      .prepare(
+        `SELECT e.action, e.revision, e.detail_json, e.created_at, u.name AS user_name FROM proposal_events e
+         LEFT JOIN users u ON u.id = e.user_id WHERE e.proposal_id = ? ORDER BY e.id`
+      )
+      .all(p.id)
+      .map(({ detail_json, ...e }) => ({ ...e, detail: JSON.parse(detail_json) }))
+    res.json({ members: members(req.user.householdId), proposal: loadProposals(db, req.user.householdId, p.id)[0], history })
+  })
+
+  // Bedingter Übergang: nur aus erlaubtem Status und (falls mitgeschickt) aktueller Revision; schreibt Verlauf.
+  // Kein Wort über Erstattung: Absagen in Kino storniert keine gekauften Tickets.
+  function transition(req, res, action, schema, set) {
+    const p = own(req, res)
+    if (!p) return
+    const parsed = schema.safeParse(req.body ?? {})
+    if (!parsed.success) return res.status(422).json({ error: 'validation failed' })
+    const d = parsed.data
+    if (d.revision !== undefined && d.revision !== p.revision) return res.status(409).json({ error: 'revision conflict' })
+    if (!FROM[action].includes(p.status)) return res.status(409).json({ error: p.status })
+    let detail = {}
+    if (d.option_id !== undefined) {
+      const opt = db.prepare('SELECT snapshot_json FROM proposal_options WHERE id = ? AND proposal_id = ?').get(d.option_id, p.id)
+      if (!opt) return res.status(404).json({ error: 'not found' })
+      if (!(Date.parse(JSON.parse(opt.snapshot_json).starts_at) > Date.now())) return res.status(409).json({ error: 'expired' })
+      detail = { option_id: d.option_id, ...(p.booked_option_id && action === 'reschedule' ? { from_option_id: p.booked_option_id } : {}) }
+    }
+    const ok = db.transaction(() => {
+      const { sql, args } = set(d, req)
+      const r = db.prepare(`UPDATE proposals SET ${sql}, revision = revision + 1, ics_seq = ics_seq + 1, updated_at = datetime('now')
+        WHERE id = ? AND revision = ?`).run(...args, p.id, p.revision)
+      if (!r.changes) return false
+      db.prepare('INSERT INTO proposal_events (proposal_id, user_id, action, revision, detail_json) VALUES (?, ?, ?, ?, ?)')
+        .run(p.id, req.user.id, action, p.revision + 1, JSON.stringify(detail))
+      return true
+    })()
+    if (!ok) return res.status(409).json({ error: 'revision conflict' })
+    res.json(loadProposals(db, req.user.householdId, p.id)[0])
+  }
+  const book = (d, req) => ({
+    sql: "status = 'booked', booked_option_id = ?, booked_by = ?, booked_at = datetime('now'), ticket_link = COALESCE(?, ticket_link)",
+    args: [d.option_id, req.user.id, d.ticket_link ?? null],
+  })
+  const key = (action) => idempotent(db, (req) => `proposal.${action}:${req.params.id}`)
 
   router.post('/proposals', idempotent(db, 'proposal.create'), (req, res) => {
     const parsed = createSchema.safeParse(req.body)
@@ -78,6 +141,7 @@ export function proposalsRouter(db) {
         db.prepare('INSERT INTO proposals (household_id, movie_id, created_by, note) VALUES (?, ?, ?, ?)')
           .run(req.user.householdId, movie_id, req.user.id, note || null).lastInsertRowid
       )
+      db.prepare("INSERT INTO proposal_events (proposal_id, user_id, action, revision) VALUES (?, ?, 'created', 1)").run(pid, req.user.id)
       const insOpt = db.prepare('INSERT INTO proposal_options (proposal_id, screening_id, snapshot_json) VALUES (?, ?, ?)')
       const insVote = db.prepare("INSERT INTO votes (option_id, user_id, value) VALUES (?, ?, 'yes')")
       for (const s of shows) {
@@ -98,7 +162,8 @@ export function proposalsRouter(db) {
     if (!p) return
     const parsed = voteSchema.safeParse(req.body)
     if (!parsed.success) return res.status(422).json({ error: 'validation failed' })
-    if (p.status === 'cancelled') return res.status(409).json({ error: 'cancelled' })
+    // Abstimmen nur, solange offen; danach zählt der gebuchte Stand.
+    if (p.status !== 'open') return res.status(409).json({ error: p.status })
     const opt = db.prepare('SELECT id FROM proposal_options WHERE id = ? AND proposal_id = ?').get(Number(req.params.optionId), p.id)
     if (!opt) return res.status(404).json({ error: 'not found' })
     db.prepare(
@@ -108,21 +173,13 @@ export function proposalsRouter(db) {
     res.status(204).end()
   })
 
-  router.post('/proposals/:id/book', (req, res) => {
-    const p = own(req, res)
-    if (!p) return
-    const parsed = bookSchema.safeParse(req.body)
-    if (!parsed.success) return res.status(422).json({ error: 'validation failed' })
-    if (p.status === 'cancelled') return res.status(409).json({ error: 'cancelled' })
-    const opt = db.prepare('SELECT snapshot_json FROM proposal_options WHERE id = ? AND proposal_id = ?').get(parsed.data.option_id, p.id)
-    if (!opt) return res.status(404).json({ error: 'not found' })
-    if (!(Date.parse(JSON.parse(opt.snapshot_json).starts_at) > Date.now())) return res.status(409).json({ error: 'expired' })
-    db.prepare(
-      `UPDATE proposals SET status = 'booked', booked_option_id = ?, booked_by = ?, booked_at = datetime('now'), updated_at = datetime('now'), ics_seq = ics_seq + 1,
-       ticket_link = COALESCE(?, ticket_link) WHERE id = ?`
-    ).run(parsed.data.option_id, req.user.id, parsed.data.ticket_link ?? null, p.id)
-    res.json(loadProposals(db, req.user.householdId, p.id)[0])
-  })
+  router.post('/proposals/:id/book', key('book'), (req, res) => transition(req, res, 'book', bookSchema, book))
+  // Umbuchen ist ein eigener, bestätigter Schritt (nicht verstecktes Neu-Buchen).
+  router.post('/proposals/:id/reschedule', key('reschedule'), (req, res) => transition(req, res, 'reschedule', bookSchema, book))
+  router.post('/proposals/:id/cancel', key('cancel'), (req, res) => transition(req, res, 'cancel', actionSchema, () => ({ sql: "status = 'cancelled'", args: [] })))
+  // Wieder öffnen: Stimmen bleiben erhalten, Buchung wird aufgehoben.
+  router.post('/proposals/:id/reopen', key('reopen'), (req, res) =>
+    transition(req, res, 'reopen', actionSchema, () => ({ sql: "status = 'open', booked_option_id = NULL, booked_by = NULL, booked_at = NULL", args: [] })))
 
   // Link zu den gekauften Tickets (aus der Bestätigungs-Mail); landet im Kalendereintrag.
   router.put('/proposals/:id/ticket', (req, res) => {
@@ -131,15 +188,13 @@ export function proposalsRouter(db) {
     const parsed = ticketSchema.safeParse(req.body)
     if (!parsed.success) return res.status(422).json({ error: 'validation failed' })
     if (p.status !== 'booked') return res.status(409).json({ error: 'not booked' })
-    db.prepare("UPDATE proposals SET ticket_link = ?, updated_at = datetime('now'), ics_seq = ics_seq + 1 WHERE id = ?").run(parsed.data.ticket_link, p.id)
+    if (parsed.data.revision !== undefined && parsed.data.revision !== p.revision) return res.status(409).json({ error: 'revision conflict' })
+    db.transaction(() => {
+      db.prepare("UPDATE proposals SET ticket_link = ?, updated_at = datetime('now'), ics_seq = ics_seq + 1, revision = revision + 1 WHERE id = ?").run(parsed.data.ticket_link, p.id)
+      // Verlauf ohne den Link selbst (privat).
+      db.prepare("INSERT INTO proposal_events (proposal_id, user_id, action, revision, detail_json) VALUES (?, ?, 'ticket', ?, '{}')").run(p.id, req.user.id, p.revision + 1)
+    })()
     res.json(loadProposals(db, req.user.householdId, p.id)[0])
-  })
-
-  router.post('/proposals/:id/cancel', (req, res) => {
-    const p = own(req, res)
-    if (!p) return
-    db.prepare(`UPDATE proposals SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?`).run(p.id)
-    res.status(204).end()
   })
 
   router.get('/proposals/:id.ics', (req, res) => {

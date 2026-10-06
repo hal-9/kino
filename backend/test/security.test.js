@@ -91,7 +91,7 @@ describe('K25: Schreibzugriffe von fremder Origin (CSRF, z. B. Nachbar-Subdomain
     expect(db.prepare('SELECT status FROM proposals WHERE id = ?').get(p.id).status).toBe('booked')
     expect((await request(app).post('/api/logout').set('Cookie', c1).set('Host', 'kino.tunikb.com').set('Origin', 'null')).status).toBe(403)
     expect((await request(app).get('/api/proposals').set('Cookie', c1).set('Origin', 'https://evil.example')).status).toBe(200)
-    expect((await request(app).post(`/api/proposals/${p.id}/cancel`).set('Cookie', c1).set('Host', 'kino.tunikb.com').set('Origin', 'https://kino.tunikb.com')).status).toBe(204)
+    expect((await request(app).post(`/api/proposals/${p.id}/cancel`).set('Cookie', c1).set('Host', 'kino.tunikb.com').set('Origin', 'https://kino.tunikb.com')).status).toBe(200)
   })
 })
 

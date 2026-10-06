@@ -654,5 +654,56 @@
       "measured production data-loss window: not measured"
     ],
     "next_ready": []
+  },
+  "K11": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "reproduced": {
+      "against pre-K11 proposals.js with migration 013 present": "6/7 new lifecycle tests failed (expected)",
+      "last-write-wins": "POST /book on an already booked proposal silently re-booked (two competing bookings both 200)",
+      "votes": "voting allowed on booked proposals (only cancelled rejected)",
+      "archive": "list hid booked proposals whose updated_at was older than 60 days even when the show was far in the future; no detail endpoint (frontend filtered the list by id)",
+      "history": "no record of book/cancel; cancel had no confirmation, returned 204"
+    },
+    "commands": {
+      "npm test": "shared 23/23, backend 116/116, frontend 33/33; exit 0",
+      "npm run build": "exit 0",
+      "populated upgrade on dev.db copy (scratchpad)": "4 -> 13 migrations; counts unchanged (6989 screenings, 2 proposals, 4 options, 1 visit, 6 votes), revision=1 for existing, foreign_key_check [], integrity ok"
+    },
+    "modified": [
+      "backend/migrations/013_proposal_lifecycle.sql (proposals.revision DEFAULT 1, proposal_events history table)",
+      "backend/src/routes/proposals.js (transition(): allowed-from-status table, optional revision check + conditional UPDATE ... WHERE revision = ?, event row in same tx; book only from open, new /reschedule /reopen, cancel returns proposal JSON; votes only while open; GET /proposals/:id with members + history; list by event time, ?view=archive)",
+      "backend/src/idempotency.js (action may be a function of req; lifecycle keys scoped to proposal id)",
+      "backend/test/lifecycle.test.js (new), ics.test.js (rebook via /reschedule), proposals.test.js + security.test.js (cancel 200)",
+      "frontend/src/screens/Vorschlaege.jsx (revision + Idempotency-Key on book/reschedule/cancel/reopen, confirm dialogs with no-refund wording, 409 conflict text + refresh, Umbuchen/Absagen/Wieder öffnen, Detail via /proposals/:id with neutral 404, Verlauf, Archiv toggle)",
+      "frontend/src/index.css (.history)",
+      "frontend/src/test/lifecycle.test.jsx (new)"
+    ],
+    "migration_notes": "013 is additive (one column with default, one table, one index). Fresh install + populated upgrade from 012 tested. Older code ignores both; rollback compatible (old code would again allow book on booked).",
+    "acceptance": {
+      "K11-AC01": "passed (two parallel books at revision 1 -> one 200, one 409; book on booked without revision -> 409)",
+      "K11-AC02": "passed (vote on booked/cancelled -> 409; foreign option id for vote/book -> 404; no vote rows changed)",
+      "K11-AC03": "passed (same key + body -> identical response, one event; other body or other proposal with same key -> 409)",
+      "K11-AC04": "passed (created/updated 2020, show 2099 -> listed + detail 200; show ended >60 d -> archive view, detail still 200; unknown id 404)",
+      "K11-AC05": "passed (reschedule/cancel/reopen recorded with actor+revision, votes kept on reopen, response has no refund claim; UI confirm text says tickets are not cancelled/refunded - jsdom)"
+    },
+    "decisions": [
+      "revision is optional in request bodies so a cached older frontend keeps working during deploy; when absent, the status gate (book only from open) still prevents last-write-wins.",
+      "Votes do not bump revision (10-s polling would otherwise make every booking stale); ticket-link edits do.",
+      "Reopen keeps all votes and clears the booking; reschedule keeps ticket_link (user can edit it) - old link value is never written to history.",
+      "Archive = cancelled, or booked whose show started > 60 days ago (JS clock). Open proposals stay active as before.",
+      "Trusted-household policy unchanged: any member may book/reschedule/cancel/reopen; household isolation enforced via own()."
+    ],
+    "deferred": [
+      "reconfirmation of votes after material change (needs K12 change detection)",
+      "explicit participant cohort snapshot (K15/K17)",
+      "STATUS:CANCELLED in feeds for cancelled bookings (from K09)"
+    ],
+    "gaps": [
+      "real browser two-user race: not run"
+    ],
+    "next_ready": [
+      "K12"
+    ]
   }
 }

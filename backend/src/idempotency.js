@@ -3,10 +3,12 @@ import crypto from 'node:crypto'
 // Optionaler Header Idempotency-Key (nach requireAuth): gleiche Anfrage → gespeicherte Antwort,
 // gleicher Key mit anderer Aktion/anderem Inhalt → 409. Nur erfolgreiche Antworten werden gespeichert,
 // Fehler dürfen mit demselben Key wiederholt werden. Synchrone Handler (better-sqlite3) laufen nicht verschränkt.
-export function idempotent(db, action) {
+// action darf eine Funktion von req sein (z. B. mit Vorschlags-ID), damit ein Key nicht für ein anderes Objekt gilt.
+export function idempotent(db, actionOf) {
   return (req, res, next) => {
     const key = req.get('Idempotency-Key')
     if (key === undefined) return next()
+    const action = typeof actionOf === 'function' ? actionOf(req) : actionOf
     if (!/^[\w-]{8,100}$/.test(key)) return res.status(422).json({ error: 'validation failed' })
     const hash = crypto.createHash('sha256').update(`${action}\n${JSON.stringify(req.body ?? null)}`).digest('hex')
     const row = db.prepare('SELECT action, request_hash, status, response_json FROM idempotency_keys WHERE user_id = ? AND key = ?').get(req.user.id, key)

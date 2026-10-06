@@ -427,3 +427,7 @@ textarea.field { min-height: 72px; resize: vertical; font-family: inherit; }
 .fix { margin: 8px 0 4px; font-size: 14px; color: var(--muted); }
 .fix summary { cursor: pointer; padding: 6px 0; }
 .fix .field { margin-top: 8px; }
+
+/* K11: Verlauf eines Vorschlags */
+.history { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+.history ul { margin: 4px 0 0; padding-left: 18px; }

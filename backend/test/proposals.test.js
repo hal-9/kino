@@ -109,7 +109,7 @@ describe('Vorschläge + Kalender', () => {
 
   it('cancel nimmt den Vorschlag aus der Liste', async () => {
     const p = (await create()).body
-    await request(app).post(`/api/proposals/${p.id}/cancel`).set('Cookie', c1).expect(204)
+    await request(app).post(`/api/proposals/${p.id}/cancel`).set('Cookie', c1).expect(200)
     expect((await request(app).get('/api/proposals').set('Cookie', c1)).body.proposals).toHaveLength(0)
   })
 })

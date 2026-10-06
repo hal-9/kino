@@ -59,6 +59,8 @@ describe('Ereignis-Invarianten (K09-AC04/05)', () => {
   }
   const ics = async (id) => (await request(app).get(`/api/proposals/${id}.ics`).set('Cookie', c1)).text
   const book = (p, i) => request(app).post(`/api/proposals/${p.id}/book`).set('Cookie', c1).send({ option_id: p.options[i].id })
+  // K11: Umbuchen ist ein eigener Schritt.
+  const rebook = (p, i) => request(app).post(`/api/proposals/${p.id}/reschedule`).set('Cookie', c1).send({ option_id: p.options[i].id })
 
   it('Berliner DST-Wechsel: Start/Ende korrekt in UTC (Herbst-Doppelstunde, Frühjahr)', async () => {
     const p = await propose(['2099-10-25T02:30:00+01:00', '2099-03-29T03:30:00+02:00'])
@@ -67,7 +69,7 @@ describe('Ereignis-Invarianten (K09-AC04/05)', () => {
     let t = await ics(p.id)
     expect(prop(t, 'DTSTART')).toBe('20991025T013000Z')
     expect(prop(t, 'DTEND')).toBe('20991025T033000Z') // +100 +20 min
-    await book(p, 0)
+    await rebook(p, 0)
     t = await ics(p.id)
     expect(prop(t, 'DTSTART')).toBe('20990329T013000Z')
     expect(prop(t, 'SUMMARY')).toContain('Film\x5c; special')
@@ -77,7 +79,7 @@ describe('Ereignis-Invarianten (K09-AC04/05)', () => {
     const p = await propose(['2099-10-13T20:15:00+02:00', '2099-10-14T20:15:00+02:00'])
     await book(p, 0)
     const t1 = await ics(p.id)
-    await book(p, 1) // gleiche Sekunde: SEQUENCE muss trotzdem steigen
+    await rebook(p, 1) // gleiche Sekunde: SEQUENCE muss trotzdem steigen
     const t2 = await ics(p.id)
     await request(app).put(`/api/proposals/${p.id}/ticket`).set('Cookie', c1).send({ ticket_link: 'https://tickets.example/a' })
     const t3 = await ics(p.id)
