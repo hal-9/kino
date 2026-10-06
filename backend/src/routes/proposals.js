@@ -16,6 +16,11 @@ const revision = z.number().int().optional()
 const bookSchema = z.object({ option_id: z.number().int(), ticket_link: link.nullish(), revision })
 const ticketSchema = z.object({ ticket_link: link.nullable(), revision })
 const actionSchema = z.object({ revision }).default({})
+// Treffpunkt: Zeitpunkt mit Offset (z. B. 2099-10-13T19:45:00+02:00), Ort und Notiz begrenzt; null löscht.
+const instant = z.string().max(40).regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2})?([+-][0-9]{2}:[0-9]{2}|Z)$/).refine((v) => !Number.isNaN(Date.parse(v)))
+const meetingSchema = z.object({
+  meet_at: instant.nullable(), meet_place: z.string().trim().max(120).nullable(), outing_note: z.string().trim().max(300).nullable(), revision,
+})
 const addSchema = z.object({ screening_ids: z.array(z.number().int()).min(1).max(4), revision })
 
 // Planungsstatus (open/booked/cancelled) ist getrennt von Anwesenheit (Besuche). Erlaubte Übergänge:
@@ -47,6 +52,7 @@ export function loadProposals(db, householdId, id, view = 'active') {
     created_by: p.created_by,
     booked_option_id: p.booked_option_id,
     ticket_link: p.ticket_link,
+    meeting: { meet_at: p.meet_at, meet_place: p.meet_place, outing_note: p.outing_note },
     // K15: feste Kohorte (Nenner); fehlende Stimme = unbeantwortet, nie Ja/Nein.
     participants: cohort.all(p.id).map((r) => r.user_id),
     options: opts.all(p.id).map((o) => {
@@ -243,6 +249,23 @@ export function proposalsRouter(db) {
       for (const id of ids) ack.run(req.user.id, id)
       return { change_ids: ids }
     }))
+
+  // K17: Treffpunkt/Notiz einer gebuchten Vorstellung; Verlauf ohne Inhalte (privat), Revision steigt.
+  router.put('/proposals/:id/meeting', (req, res) => {
+    const p = own(req, res)
+    if (!p) return
+    const parsed = meetingSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(422).json({ error: 'validation failed' })
+    const d = parsed.data
+    if (p.status !== 'booked') return res.status(409).json({ error: 'not booked' })
+    if (d.revision !== undefined && d.revision !== p.revision) return res.status(409).json({ error: 'revision conflict' })
+    db.transaction(() => {
+      db.prepare("UPDATE proposals SET meet_at = ?, meet_place = ?, outing_note = ?, revision = revision + 1, updated_at = datetime('now') WHERE id = ?")
+        .run(d.meet_at, d.meet_place || null, d.outing_note || null, p.id)
+      db.prepare("INSERT INTO proposal_events (proposal_id, user_id, action, revision, detail_json) VALUES (?, ?, 'meeting', ?, '{}')").run(p.id, req.user.id, p.revision + 1)
+    })()
+    res.json(loadProposals(db, req.user.householdId, p.id)[0])
+  })
 
   // Link zu den gekauften Tickets (aus der Bestätigungs-Mail); landet im Kalendereintrag.
   router.put('/proposals/:id/ticket', (req, res) => {

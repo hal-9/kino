@@ -9,6 +9,8 @@ import MovieHeader from '../components/MovieHeader.jsx'
 import CalendarLink from '../components/CalendarLink.jsx'
 import { initial } from '../components/Header.jsx'
 import { nextStep, tally } from '../lib/decision.js'
+import { address, directionsUrl, endText, nextOuting } from '../lib/outing.js'
+import { berlinIso } from 'shared'
 
 const MARK = { yes: '✓', maybe: '?', no: '✗' }
 const SAY = { yes: 'Ja', maybe: 'Vielleicht', no: 'Nein' }
@@ -52,6 +54,36 @@ function stepText(step, members) {
     case 'ticket': return 'Ticket-Link ist in Kino nicht erfasst (heißt nicht, dass nichts gekauft wurde).'
     default: return null
   }
+}
+
+const yesNames = (members, o) => Object.entries(o.votes).filter(([, v]) => v === 'yes').map(([u]) => nameOf(members, Number(u)))
+const meetText = (m) => [m.meet_at && `${when(m.meet_at)} Uhr`, m.meet_place].filter(Boolean).join(' · ')
+
+// K17: nächster Kinoabend aus dem Buchungs-Snapshot. Live-Änderungen nur als Warnung, nie umgeschrieben.
+function NextOuting({ proposals, members }) {
+  const next = nextOuting(proposals)
+  if (!next) return null
+  const { p, option } = next
+  const s = option.snapshot
+  const changed = option.changes?.filter((c) => !c.acknowledged) ?? []
+  return (
+    <section className="outing" aria-label="Nächster Kinoabend">
+      <h2>Nächster Kinoabend</h2>
+      <p className="outing-title"><Link to={`/vorschlaege/${p.id}`}>{p.movie.title}</Link></p>
+      <p><strong>{when(s.starts_at)}</strong> · {endText(s)}</p>
+      <p>{address(s)} · <a href={directionsUrl(s)} target="_blank" rel="noreferrer">Route ↗</a></p>
+      {(s.auditorium || s.version) && <p className="muted">Laut Buchung: {[s.auditorium, s.version].filter(Boolean).join(' · ')}</p>}
+      <p>Dabei: {yesNames(members, option).join(', ') || 'noch niemand mit ✓'}</p>
+      {meetText(p.meeting ?? {}) && <p>Treffpunkt: {meetText(p.meeting)}</p>}
+      {p.meeting?.outing_note && <p className="muted">{p.meeting.outing_note}</p>}
+      {changed.length > 0 && <p className="stale" role="status">⚠ Kino-Daten weichen ab: {changed.map(changeText).join('; ')}. Die Buchung bleibt unverändert.</p>}
+      <div className="sheet-actions">
+        {p.ticket_link
+          ? <a className="btn primary" href={p.ticket_link} target="_blank" rel="noreferrer">Tickets öffnen</a>
+          : <span className="sub">Ticket-Link nicht in Kino erfasst.</span>}
+      </div>
+    </section>
+  )
 }
 
 function Queue({ proposals, members, me }) {
@@ -125,6 +157,22 @@ function Proposal({ p, members, me, history }) {
   }
   // K16: nur den App-Link und eine knappe Zusammenfassung teilen, nie Ticket- oder Kalender-Links.
   const [shared, setShared] = useState(null)
+  const [meetSheet, setMeetSheet] = useState(null) // { date, time, place, note }
+  const saveMeeting = useMutation({
+    mutationFn: (m) => api.put(`/proposals/${p.id}/meeting`, { ...m, revision: p.revision }),
+    onSuccess: () => { setMeetSheet(null); refresh() },
+    onError: (e) => { if (e.status === 409) refresh() },
+  })
+  function openMeeting() {
+    const m = p.meeting ?? {}
+    const at = m.meet_at ? new Date(m.meet_at) : null
+    const ymd = (d) => d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+    const hmOf = (d) => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Europe/Berlin' })
+    saveMeeting.reset()
+    setMeetSheet({ date: at ? ymd(at) : ymd(new Date(booked.snapshot.starts_at)), time: at ? hmOf(at) : '', place: m.meet_place ?? '', note: m.outing_note ?? '' })
+  }
+  const meetAt = meetSheet?.time ? berlinIso(meetSheet.date, meetSheet.time) : null
+  const meetInvalid = Boolean(meetSheet?.time) && !meetAt
   async function share() {
     const url = `${window.location.origin}/vorschlaege/${p.id}`
     const text = `${p.movie.title}: ${p.status === 'booked' ? 'gebucht' : `${p.options.length} ${p.options.length === 1 ? 'Termin' : 'Termine'} zur Abstimmung`}`
@@ -144,6 +192,7 @@ function Proposal({ p, members, me, history }) {
     <section className="group">
       <MovieHeader movie={p.movie} onInfo={() => setInfo(true)} />
       <p className="status-line">{p.status === 'booked' ? '✓ gebucht' : p.status === 'cancelled' ? 'abgesagt' : 'offen'}</p>
+      {p.status === 'booked' && meetText(p.meeting ?? {}) && <p className="sub step">Treffpunkt: {meetText(p.meeting)}</p>}
       {stepText(nextStep(p, me.id), members) && <p className="sub step">{stepText(nextStep(p, me.id), members)}</p>}
       <div className="card">
         {p.note && <p className="note">{p.note}</p>}
@@ -211,6 +260,7 @@ function Proposal({ p, members, me, history }) {
             <a className="btn" href={`/api/proposals/${p.id}.ics`}>.ics laden</a>
             <button className="btn" onClick={() => setAbo(true)}>Kalender abonnieren</button>
             {past && <Link className="btn" to="/besuche">Zum Besuch</Link>}
+            {!past && <button className="btn" onClick={openMeeting}>Treffpunkt</button>}
             {!past && <button className="btn" onClick={openPick}>Umbuchen</button>}
             {!past && <button className="btn" disabled={cancel.isPending} onClick={confirmCancel}>Absagen</button>}
             {!past && <button className="btn" disabled={reopen.isPending} onClick={confirmReopen}>Wieder öffnen</button>}
@@ -248,12 +298,40 @@ function Proposal({ p, members, me, history }) {
             </button>
           ))}
         </div>
+        {p.options.find((o) => o.id === pick)?.snapshot.ticket_url && (
+          <p className="sub">
+            <a href={p.options.find((o) => o.id === pick).snapshot.ticket_url} target="_blank" rel="noreferrer">Tickets beim Kino kaufen ↗</a>{' '}
+            Öffnet nur die Kinoseite; gebucht ist es erst, wenn ihr es hier speichert.
+          </p>
+        )}
         <input className="field" type="url" aria-label="Ticket-Link (optional)" placeholder="Ticket-Link aus der Bestätigungs-Mail (optional)" value={link} onChange={(e) => setLink(e.target.value)} />
         <MutationError mutation={book} text={conflictText} />
         <div className="sheet-actions">
           <button className="btn" onClick={() => setPick(null)}>Abbrechen</button>
           <button className="btn primary" onClick={() => book.mutate(pick)} disabled={book.isPending}>Als gebucht speichern</button>
         </div>
+      </Sheet>
+
+      <Sheet open={meetSheet != null} onClose={() => setMeetSheet(null)} label="Treffpunkt">
+        {meetSheet && (
+          <>
+            <h3>Treffpunkt</h3>
+            <p className="sub">Optional. Sehen alle in der Gruppe.</p>
+            <div className="time-filters">
+              <label>Datum <input type="date" aria-label="Treffpunkt Datum" value={meetSheet.date} onChange={(e) => setMeetSheet({ ...meetSheet, date: e.target.value })} /></label>
+              <label>Uhrzeit <input type="time" aria-label="Treffpunkt Uhrzeit" value={meetSheet.time} onChange={(e) => setMeetSheet({ ...meetSheet, time: e.target.value })} /></label>
+            </div>
+            <input className="field" aria-label="Treffpunkt Ort" placeholder="Ort (optional)" maxLength={120} value={meetSheet.place} onChange={(e) => setMeetSheet({ ...meetSheet, place: e.target.value })} />
+            <textarea className="field" aria-label="Notiz zum Abend" placeholder="Notiz (optional)" maxLength={300} value={meetSheet.note} onChange={(e) => setMeetSheet({ ...meetSheet, note: e.target.value })} />
+            {meetInvalid && <p className="stale" role="alert">Diese Uhrzeit gibt es wegen der Zeitumstellung nicht eindeutig.</p>}
+            <MutationError mutation={saveMeeting} text={conflictText} />
+            <div className="sheet-actions">
+              <button className="btn" onClick={() => setMeetSheet(null)}>Abbrechen</button>
+              <button className="btn primary" disabled={saveMeeting.isPending || meetInvalid}
+                onClick={() => saveMeeting.mutate({ meet_at: meetAt, meet_place: meetSheet.place.trim() || null, outing_note: meetSheet.note.trim() || null })}>Speichern</button>
+            </div>
+          </>
+        )}
       </Sheet>
 
       <Sheet open={ticketSheet} onClose={() => setTicketSheet(false)} label="Ticket-Link" dirty={link.trim() !== (p.ticket_link ?? '')}>
@@ -308,6 +386,7 @@ export default function Vorschlaege() {
       {data.proposals.length === 0 && (
         <div className="empty"><h2>Noch nichts vorgeschlagen</h2><p>Im Programm bei einer Vorstellung auf „Vorschlagen“ tippen.</p></div>
       )}
+      <NextOuting proposals={data.proposals} members={data.members} />
       <Queue proposals={data.proposals} members={data.members} me={me} />
       {data.proposals.map((p) => <Proposal key={p.id} p={p} members={data.members} me={me} />)}
       <button className="link-btn" aria-expanded={archive} onClick={() => setArchive(!archive)}>{archive ? 'Archiv ausblenden' : 'Archiv anzeigen'}</button>

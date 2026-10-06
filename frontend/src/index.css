@@ -450,3 +450,8 @@ textarea.field { min-height: 72px; resize: vertical; font-family: inherit; }
 .queue h2 { margin: 0 0 6px; font-size: 15px; }
 .queue ul { margin: 0; padding-left: 18px; font-size: 14px; }
 .share-row { display: flex; gap: 10px; align-items: center; margin: 4px 0; }
+/* K17: nächster Kinoabend */
+.outing { margin: 0 0 16px; padding: 14px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); font-size: 14px; }
+.outing h2 { margin: 0 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--primary); }
+.outing p { margin: 4px 0; }
+.outing-title { font-size: 18px; font-weight: 700; }
