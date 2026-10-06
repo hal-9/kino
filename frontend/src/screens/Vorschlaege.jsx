@@ -8,6 +8,7 @@ import MovieSheet from '../components/MovieSheet.jsx'
 import MovieHeader from '../components/MovieHeader.jsx'
 import CalendarLink from '../components/CalendarLink.jsx'
 import { initial } from '../components/Header.jsx'
+import { nextStep, tally } from '../lib/decision.js'
 
 const MARK = { yes: '✓', maybe: '?', no: '✗' }
 const SAY = { yes: 'Ja', maybe: 'Vielleicht', no: 'Nein' }
@@ -37,6 +38,34 @@ function changeText(c) {
     case 'auditorium': return `Saal jetzt ${c.after}, vorher ${c.before}${by}`
     default: return c.after === 'withdrawn' ? 'Nicht mehr im Programm' : 'Zuletzt nicht im Programm gesehen (unsicher, keine Absage)'
   }
+}
+
+const nameOf = (members, id) => members.find((m) => m.id === id)?.name ?? 'ehemaliges Mitglied'
+const names = (members, ids) => ids.map((id) => nameOf(members, id)).join(', ')
+// K15: nächster Schritt in Worten; nie automatisches Buchen.
+function stepText(step, members) {
+  switch (step?.kind) {
+    case 'my_vote': return 'Deine Stimme fehlt noch.'
+    case 'waiting': return `Warten auf: ${names(members, step.missing)}.`
+    case 'ready': return 'Alle haben abgestimmt, mindestens eine Option ohne Nein. Bereit zur Entscheidung (Buchen bleibt eure Entscheidung).'
+    case 'no_fit': return 'Alle haben abgestimmt, aber jede Option hat ein Nein. Keine passt allen.'
+    case 'ticket': return 'Ticket-Link ist in Kino nicht erfasst (heißt nicht, dass nichts gekauft wurde).'
+    default: return null
+  }
+}
+
+function Queue({ proposals, members, me }) {
+  const items = proposals.map((p) => ({ p, step: nextStep(p, me.id) })).filter((x) => ['my_vote', 'ready', 'no_fit', 'ticket'].includes(x.step?.kind))
+  if (!items.length) return null
+  const LABEL = { my_vote: 'Deine Stimme fehlt', ready: 'Bereit zur Entscheidung', no_fit: 'Keine Option passt allen', ticket: 'Ticket-Link nicht erfasst' }
+  const ORDER = ['my_vote', 'ready', 'ticket', 'no_fit']
+  items.sort((a, b) => ORDER.indexOf(a.step.kind) - ORDER.indexOf(b.step.kind))
+  return (
+    <section className="queue" aria-label="Zu tun">
+      <h2>Zu tun</h2>
+      <ul>{items.map(({ p, step }) => <li key={p.id}><Link to={`/vorschlaege/${p.id}`}>{LABEL[step.kind]}: {p.movie.title}</Link></li>)}</ul>
+    </section>
+  )
 }
 
 function Proposal({ p, members, me, history }) {
@@ -104,12 +133,16 @@ function Proposal({ p, members, me, history }) {
     <section className="group">
       <MovieHeader movie={p.movie} onInfo={() => setInfo(true)} />
       <p className="status-line">{p.status === 'booked' ? '✓ gebucht' : p.status === 'cancelled' ? 'abgesagt' : 'offen'}</p>
+      {stepText(nextStep(p, me.id), members) && <p className="sub step">{stepText(nextStep(p, me.id), members)}</p>}
       <div className="card">
         {p.note && <p className="note">{p.note}</p>}
         {p.options.map((o) => {
           const s = o.snapshot
           const mine = intent[o.id] ?? o.votes[me.id]
           const voteOf = (uid) => (uid === me.id ? mine : o.votes[uid])
+          const t = tally(o, p.participants ?? [])
+          // Avatare: Kohorte plus alle, die tatsächlich abgestimmt haben.
+          const people = [...new Set([...(p.participants ?? members.map((m) => m.id)), ...Object.keys(o.votes).map(Number)])]
           return (
             <div key={o.id} className={`opt${o.id === best?.id && score(o) > 0 ? ' best' : ''}${o.id === p.booked_option_id ? ' booked' : ''}`}>
               <div className="opt-head">
@@ -117,17 +150,18 @@ function Proposal({ p, members, me, history }) {
                 {s.version && <span className={`badge ${s.version === 'DF' ? '' : 'ov'}`}>{s.version}</span>}
               </div>
               <small className="muted">{[s.cinema_name, s.auditorium].filter(Boolean).join(' · ')}</small>
+              <small className="tally">{t.yes} Ja · {t.maybe} Vielleicht · {t.no} Nein · {t.open} offen</small>
               {o.changes?.length > 0 && (
                 <ul className="changes" aria-label="Änderungen seit dem Vorschlag">
                   {o.changes.map((c) => <li key={c.id} className={c.acknowledged ? 'ack' : ''}>⚠ {changeText(c)}{c.acknowledged ? ' · geprüft' : ''}</li>)}
                 </ul>
               )}
               <div className="opt-votes">
-                {members.map((m) => (
-                  <span key={m.id} className={`avatar v-${voteOf(m.id) ?? 'none'}`} role="img" aria-label={`${m.name}: ${SAY[voteOf(m.id)] ?? 'offen'}`} title={`${m.name}: ${SAY[voteOf(m.id)] ?? 'offen'}`}>
-                    <span aria-hidden="true">{initial(m.name)}<i>{MARK[voteOf(m.id)] ?? ''}</i></span>
+                {people.map((id) => { const name = nameOf(members, id); return (
+                  <span key={id} className={`avatar v-${voteOf(id) ?? 'none'}`} role="img" aria-label={`${name}: ${SAY[voteOf(id)] ?? 'offen'}`} title={`${name}: ${SAY[voteOf(id)] ?? 'offen'}`}>
+                    <span aria-hidden="true">{initial(name)}<i>{MARK[voteOf(id)] ?? ''}</i></span>
                   </span>
-                ))}
+                ) })}
                 {p.status === 'open' && (
                   <span className="tri" role="group" aria-label={`Meine Stimme für ${when(s.starts_at)}`}>
                     {['yes', 'maybe', 'no'].map((v) => (
@@ -252,6 +286,7 @@ export default function Vorschlaege() {
       {data.proposals.length === 0 && (
         <div className="empty"><h2>Noch nichts vorgeschlagen</h2><p>Im Programm bei einer Vorstellung auf „Vorschlagen“ tippen.</p></div>
       )}
+      <Queue proposals={data.proposals} members={data.members} me={me} />
       {data.proposals.map((p) => <Proposal key={p.id} p={p} members={data.members} me={me} />)}
       <button className="link-btn" aria-expanded={archive} onClick={() => setArchive(!archive)}>{archive ? 'Archiv ausblenden' : 'Archiv anzeigen'}</button>
       {archive && (old.data

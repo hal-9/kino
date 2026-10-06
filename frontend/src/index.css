@@ -443,3 +443,9 @@ textarea.field { min-height: 72px; resize: vertical; font-family: inherit; }
 .time-filters { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 4px 0 10px; font-size: 14px; color: var(--muted); }
 .time-filters input { margin-left: 6px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 4px 6px; }
 .unsure { margin: 10px 0 2px; font-size: 13px; color: var(--muted); }
+/* K15: Abstimmungsstand und Zu-tun-Liste */
+.tally { display: block; font-size: 12px; color: var(--muted); }
+.step { margin: -4px 4px 8px; }
+.queue { margin: 0 0 16px; padding: 12px 14px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
+.queue h2 { margin: 0 0 6px; font-size: 15px; }
+.queue ul { margin: 0; padding-left: 18px; font-size: 14px; }

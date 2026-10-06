@@ -37,6 +37,7 @@ export function loadProposals(db, householdId, id, view = 'active') {
     .all(householdId, id ?? cutoff)
   const opts = db.prepare('SELECT * FROM proposal_options WHERE proposal_id = ? ORDER BY id')
   const votes = db.prepare('SELECT user_id, value FROM votes WHERE option_id = ?')
+  const cohort = db.prepare('SELECT user_id FROM proposal_participants WHERE proposal_id = ? ORDER BY user_id')
   return rows.map((p) => ({
     id: p.id,
     status: p.status,
@@ -46,6 +47,8 @@ export function loadProposals(db, householdId, id, view = 'active') {
     created_by: p.created_by,
     booked_option_id: p.booked_option_id,
     ticket_link: p.ticket_link,
+    // K15: feste Kohorte (Nenner); fehlende Stimme = unbeantwortet, nie Ja/Nein.
+    participants: cohort.all(p.id).map((r) => r.user_id),
     options: opts.all(p.id).map((o) => {
       const snapshot = JSON.parse(o.snapshot_json)
       return {
@@ -195,6 +198,8 @@ export function proposalsRouter(db) {
           .run(req.user.householdId, movie_id, req.user.id, note || null).lastInsertRowid
       )
       db.prepare("INSERT INTO proposal_events (proposal_id, user_id, action, revision) VALUES (?, ?, 'created', 1)").run(pid, req.user.id)
+      db.prepare("INSERT INTO proposal_participants (proposal_id, user_id, source) SELECT ?, user_id, 'snapshot' FROM household_members WHERE household_id = ?")
+        .run(pid, req.user.householdId)
       const insVote = db.prepare("INSERT INTO votes (option_id, user_id, value) VALUES (?, ?, 'yes')")
       for (const s of shows) insVote.run(insertOption(pid, s), req.user.id)
       return pid
@@ -211,10 +216,14 @@ export function proposalsRouter(db) {
     if (p.status !== 'open') return res.status(409).json({ error: p.status })
     const opt = db.prepare('SELECT id FROM proposal_options WHERE id = ? AND proposal_id = ?').get(Number(req.params.optionId), p.id)
     if (!opt) return res.status(404).json({ error: 'not found' })
-    db.prepare(
-      `INSERT INTO votes (option_id, user_id, value) VALUES (?, ?, ?)
-       ON CONFLICT (option_id, user_id) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
-    ).run(opt.id, req.user.id, parsed.data.value)
+    db.transaction(() => {
+      db.prepare(
+        `INSERT INTO votes (option_id, user_id, value) VALUES (?, ?, ?)
+         ON CONFLICT (option_id, user_id) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+      ).run(opt.id, req.user.id, parsed.data.value)
+      // Später Beigetretene werden durch ihre eigene Stimme ausdrücklich Teil der Kohorte (protokolliert über source).
+      db.prepare("INSERT OR IGNORE INTO proposal_participants (proposal_id, user_id, source) VALUES (?, ?, 'vote')").run(p.id, req.user.id)
+    })()
     res.status(204).end()
   })
 
