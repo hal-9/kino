@@ -15,14 +15,14 @@ describe('Film-Metadaten-Status (K19-AC04)', () => {
     const calls = []
     vi.stubGlobal('fetch', async (url, opts = {}) => {
       calls.push([opts.method ?? 'GET', String(url)])
-      if (opts.method === 'POST') return json({ ...base, overview: 'Inhalt', metadata: { status: 'matched', tmdb_id: 99, next_retry_at: null } })
+      if (opts.method === 'POST') return json({ ...base, overview: 'Handlung XY', metadata: { status: 'matched', tmdb_id: 99, next_retry_at: null } })
       return json({ ...base, metadata: { status: 'not_found', tmdb_id: null, next_retry_at: '2026-10-13T10:00:00.000Z' } })
     })
     await renderScreen(<MovieSheet movieId={5} onClose={() => {}} />)
     await waitFor(() => document.body.textContent.includes('Kein passender Film'))
     expect(document.body.textContent).toContain('Nächster automatischer Versuch ab')
     await act(async () => btn('Jetzt erneut suchen').click())
-    await waitFor(() => document.body.textContent.includes('Inhalt'))
+    await waitFor(() => document.body.textContent.includes('Handlung XY'))
     expect(calls.some(([m, u]) => m === 'POST' && u.endsWith('/movies/5/tmdb/retry'))).toBe(true)
     expect(document.body.textContent).not.toContain('Kein passender Film')
   })

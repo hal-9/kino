@@ -164,11 +164,40 @@ Jede Seite wird für sich geholt, geprüft und atomar veröffentlicht (Upload al
 - Nach Rotation ist der alte Link sofort ungültig (404). Kalender-Dienste behalten bereits geladene Termine;
   das lässt sich serverseitig nicht zurückholen. UIDs (`proposal-<id>@…`) bleiben gleich.
 
-## Später: Update ausrollen
+## Später: Update ausrollen — **[Nutzer-Freigabe]**
 
 ```bash
 /opt/kino/deploy/deploy.sh
 ```
+
+Ablauf (`deploy/deploy.sh`, Hilfsfunktionen in `deploy/lib.sh`):
+
+1. `git pull --ff-only`, Frontend im Node-Container bauen, nach `deploy/releases/<sha>/` kopieren und prüfen
+   (index.html + alle referenzierten `/assets/` vorhanden), Liste der Migrationen als `.migrations` dazulegen.
+   API-Image als `kino-api:<sha>` bauen. Bis hier ist Live unberührt; Fehler → Abbruch, nichts geändert.
+2. `deploy/backup.sh pre-<sha>` (Migrationen laufen beim API-Start).
+3. API auf `kino-api:<sha>` umschalten, `/api/readyz` im Container abfragen (bis 60 s).
+   Nicht bereit → `rollback.sh <vorheriges>` automatisch, Exit ≠ 0.
+4. Erst dann Frontend in den bestehenden Bind-Mount `deploy/frontend-dist` legen: Assets zuerst, `index.html`
+   zuletzt per rename. Das Verzeichnis selbst wird nie gelöscht (Caddy hält den Inode). Alte gehashte Assets
+   bleiben 14 Tage für offene Clients liegen; die letzten 5 Releases bleiben in `deploy/releases/`.
+
+`docker compose up -d` ohne `KINO_API_TAG` startet `kino-api:latest`; für Handarbeit immer das Tag aus
+`deploy/releases/current` setzen: `KINO_API_TAG=$(cat /opt/kino/deploy/releases/current) docker compose up -d kino-api`.
+
+## Rollback — **[Nutzer-Freigabe]**
+
+```bash
+/opt/kino/deploy/rollback.sh <sha>
+```
+
+Nur Code-Rollback (API-Image + Frontend des Releases). Die Datenbank wird **nicht** zurückgespielt: ein Restore
+verliert alle Schreibvorgänge seit dem Backup und ist eine bewusste Einzelentscheidung (`backups/app_*_pre-<sha>.db`).
+Migrationen sind expand-only (additiv); eine nicht rückwärtskompatible Migration muss die Zeile `-- contract`
+enthalten. Kennt das Ziel-Release eine angewandte `-- contract`-Migration nicht, bricht `rollback.sh` ab.
+
+Lokal geprüft nur isoliert (`backend/test/deploy.test.js`: git/docker als Stubs, ssh/scp/curl blockiert,
+Temp-`KINO_ROOT`). Auf dem VPS bisher **nicht ausgeführt**.
 
 ## Fallstricke
 

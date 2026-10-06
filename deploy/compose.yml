@@ -9,6 +9,8 @@ name: kino
 
 services:
   kino-api:
+    # Je Release ein eigenes Image (deploy.sh setzt KINO_API_TAG), damit rollback.sh das vorige wieder starten kann.
+    image: kino-api:${KINO_API_TAG:-latest}
     build:
       context: ..
       dockerfile: backend/Dockerfile

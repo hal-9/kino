@@ -559,5 +559,52 @@
     "next_ready": [
       "K24"
     ]
+  },
+  "K24": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "reproduced": {
+      "by source inspection (old script not executed: it hard-codes the repo path and /opt/kino and has no isolation hooks)": "deploy.sh ran find -delete on the live frontend-dist before copying (window with no app, all old hashed chunks gone), no validation, no health check, no retained release, docker compose up -d --build replaced the running API in place, no pre-migration backup, no rollback path"
+    },
+    "commands": {
+      "npm test": "shared 23/23, backend 102/102, frontend 29/29; exit 0",
+      "npm run build": "exit 0",
+      "bash -n deploy/*.sh": "ok (asserted in test)",
+      "isolated rehearsal": "backend/test/deploy.test.js runs deploy.sh/rollback.sh with stub git/docker, ssh/scp/curl/wget stubs exiting 99, empty HOME, temp KINO_ROOT, real sqlite3/tar on temp files, 20 s timeout"
+    },
+    "modified": [
+      "deploy/lib.sh (new: check_release, health_check via /api/readyz inside container, publish_frontend into existing bind mount with index.html last, schema_compatible, set_current)",
+      "deploy/deploy.sh (build + validate into deploy/releases/<sha> before touching live, image kino-api:<sha>, pre-migration backup, switch + readiness, auto rollback, publish frontend only after health, keep old assets 14 d and last 5 releases)",
+      "deploy/rollback.sh (new: code-only rollback, refuses when an applied '-- contract' or unknown migration is not part of the target release; never restores the DB)",
+      "deploy/backup.sh (KINO_ROOT/KINO_DB/BACKUP_DIR overridable, optional label, no-op when no DB)",
+      "deploy/compose.yml (image: kino-api:${KINO_API_TAG:-latest}; security settings unchanged)",
+      "docs/DEPLOY.md (update flow, rollback, approval boundary)",
+      "backend/test/deploy.test.js",
+      "frontend/src/test/movie.test.jsx (K19 test race fix: waitFor marker 'Inhalt' also matched 'Keine Inhaltsangabe')"
+    ],
+    "migration_notes": "No schema change. Convention introduced: migrations are expand-only; a backward-incompatible migration must contain a line starting with '-- contract', which blocks code rollback past it.",
+    "acceptance": {
+      "K24-AC01": "passed in isolated rehearsal (build failure and missing asset: live index/API/current unchanged, no compose up; failed readiness: API back on previous tag, frontend untouched, exit != 0)",
+      "K24-AC02": "passed in isolated rehearsal (previous app-a1.js still served after deploying b2)",
+      "K24-AC03": "partial: frontend-dist directory inode unchanged across deploys (rehearsal); real Caddy bind mount on VPS: not run",
+      "K24-AC04": "passed in isolated rehearsal (additive unknown migration -> rollback allowed; '-- contract' migration -> refused, running release kept)",
+      "K24-AC05": "partial: static check that compose keeps user 1000:1000, read_only, no-new-privileges and adds no privileged/cap_add/host network; real container rehearsal: not run (no docker run locally by rule)"
+    },
+    "decisions": [
+      "Frontend published only after API readiness; new API must work with the previous frontend for that short window (expand-only migrations make this hold).",
+      "Asset retention by mtime (14 days, refreshed on every publish via tar -m) instead of a manifest diff.",
+      "DB restore is never automated; pre-<sha> backup is kept for an explicit owner decision."
+    ],
+    "deferred": [
+      "pruning of old kino-api:<sha> images (disk) - manual docker image prune",
+      "blue/green API (two containers) for zero-downtime restarts"
+    ],
+    "gaps": [
+      "production deploy / rollback on the VPS: not run / needs owner approval",
+      "real Caddy + container readiness (wget in node:22-alpine image assumed via busybox): not run"
+    ],
+    "next_ready": [
+      "K25"
+    ]
   }
 }
