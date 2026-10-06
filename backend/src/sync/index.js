@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { berlinYmd, normTitle, slugify } from 'shared'
+import { berlinYmd, normTitle, slugify, screeningRowProblems } from 'shared'
 import { createFetch } from './util.js'
 import * as kinoheld from './kinoheld.js'
 import * as yorck from './yorck.js'
@@ -356,9 +356,10 @@ export async function runSync(db, { fetch = createFetch(), log = console.log, ad
         const res = await mod.fetchShows(ctx)
         // capturedAt: Zeitpunkt, zu dem die Quelle die Daten geliefert hat (z. B. Alter einer Inbox-Datei).
         const { rows: fetched, coverage = null, capturedAt = now } = Array.isArray(res) ? { rows: res } : res
-        // Unaufgelöste Ortszeiten (DST-Lücke/-Doppelstunde, ungültige Daten) nicht raten, sondern verwerfen.
-        const r = fetched.filter((x) => x.startsAt)
-        if (r.length < fetched.length) log(`${name}: ${fetched.length - r.length} Vorstellungen ohne eindeutige Zeit verworfen`)
+        // Unaufgelöste Ortszeiten (DST-Lücke/-Doppelstunde, ungültige Daten) und sonst ungültige Zeilen nicht raten,
+        // sondern verwerfen (shared/contracts.js); verworfene Zeilen machen die Abdeckung unvollständig.
+        const r = fetched.filter((x) => !screeningRowProblems(x).length)
+        if (r.length < fetched.length) log(`${name}: ${fetched.length - r.length} ungültige Vorstellungen verworfen (${[...new Set(fetched.flatMap(screeningRowProblems))].join(', ')})`)
         if (r.length < minRows(mod)) throw new Error(`nur ${r.length} Vorstellungen (erwartet ≥ ${minRows(mod)})`)
         importSource(db, name, r, r.length < fetched.length ? null : coverage, now, capturedAt, lease)
         total += r.length

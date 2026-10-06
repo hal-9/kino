@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
+import { canTransition } from 'shared'
 import { requireAuth } from '../auth.js'
 import { idempotent } from '../idempotency.js'
 import { eventForProposal, icsCalendar, publicUrl } from '../ics.js'
@@ -23,8 +24,7 @@ const meetingSchema = z.object({
 })
 const addSchema = z.object({ screening_ids: z.array(z.number().int()).min(1).max(4), revision })
 
-// Planungsstatus (open/booked/cancelled) ist getrennt von Anwesenheit (Besuche). Erlaubte Übergänge:
-const FROM = { book: ['open'], reschedule: ['booked'], cancel: ['open', 'booked'], reopen: ['booked', 'cancelled'], review: ['open', 'booked'] }
+// Planungsstatus (open/booked/cancelled) ist getrennt von Anwesenheit (Besuche). Erlaubte Übergänge: shared/contracts.js
 // Archiv nach Ereigniszeit: gebuchte Vorstellungen bleiben bis 60 Tage nach Beginn in der Liste, egal wie alt der Vorschlag ist.
 const ARCHIVE_AFTER_MS = 60 * 86400_000
 
@@ -110,7 +110,7 @@ export function proposalsRouter(db) {
     if (!parsed.success) return res.status(422).json({ error: 'validation failed' })
     const d = parsed.data
     if (d.revision !== undefined && d.revision !== p.revision) return res.status(409).json({ error: 'revision conflict' })
-    if (!FROM[action].includes(p.status)) return res.status(409).json({ error: p.status })
+    if (!canTransition(action, p.status)) return res.status(409).json({ error: p.status })
     // K18: Eine stattgefundene Buchung wird nicht still verlegt/geöffnet (Besuche hängen daran); Korrektur je Besuch.
     if ((action === 'reschedule' || action === 'reopen') && p.booked_option_id) {
       const b = db.prepare('SELECT snapshot_json FROM proposal_options WHERE id = ?').get(p.booked_option_id)

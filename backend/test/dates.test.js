@@ -69,6 +69,6 @@ describe('Daten und Zeitpunkte', () => {
     })
     const rows = db.prepare("SELECT starts_at FROM screenings WHERE cinema_key = 'delphi-lux' AND starts_at LIKE '2026-10-25%' ORDER BY datetime(starts_at)").all()
     expect(rows.map((r) => r.starts_at)).toEqual(['2026-10-25T02:30:00+02:00', '2026-10-25T02:30:00+01:00'])
-    expect(logs.some((m) => m.includes('yorck: 1 Vorstellungen ohne eindeutige Zeit verworfen'))).toBe(true)
+    expect(logs.some((m) => m.includes('yorck: 1 ungültige Vorstellungen verworfen (startsAt)'))).toBe(true)
   })
 })
