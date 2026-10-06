@@ -60,28 +60,28 @@ function VisitSheet({ open, onClose, members, me, init, visit }) {
   const canSave = visit || init?.proposal_id || (f.title && f.cinema_key)
 
   return (
-    <Sheet open={open} onClose={onClose}>
+    <Sheet open={open} onClose={onClose} label={visit ? 'Besuch bearbeiten' : 'Besuch eintragen'}>
       <h3>{visit ? 'Besuch bearbeiten' : 'Besuch eintragen'}</h3>
-      <input className="field" placeholder="Film" value={f.title ?? ''} onChange={set('title')} disabled={locked} />
-      {!locked && <input className="field" type="number" placeholder="Jahr" value={f.year ?? ''} onChange={set('year')} />}
-      <select className="field" value={f.cinema_key ?? ''} onChange={set('cinema_key')} disabled={locked}>
+      <input className="field" aria-label="Film" placeholder="Film" value={f.title ?? ''} onChange={set('title')} disabled={locked} />
+      {!locked && <input className="field" type="number" aria-label="Jahr" placeholder="Jahr" value={f.year ?? ''} onChange={set('year')} />}
+      <select className="field" aria-label="Kino" value={f.cinema_key ?? ''} onChange={set('cinema_key')} disabled={locked}>
         <option value="">Kino wählen…</option>
         {cinemas.data?.cinemas.map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
       </select>
-      <input className="field" type="date" value={f.watched_on ?? ''} onChange={set('watched_on')} />
-      <input className="field" list="auds" placeholder="Saal" value={f.auditorium ?? ''} onChange={set('auditorium')} />
+      <input className="field" type="date" aria-label="Datum" value={f.watched_on ?? ''} onChange={set('watched_on')} />
+      <input className="field" list="auds" aria-label="Saal" placeholder="Saal" value={f.auditorium ?? ''} onChange={set('auditorium')} />
       <datalist id="auds">{cinema?.auditoriums.map((a) => <option key={a.name} value={a.name} />)}</datalist>
       <div className="two">
-        <input className="field" placeholder="Reihe" value={f.row ?? ''} onChange={set('row')} />
-        <input className="field" placeholder="Sitze" value={f.seats ?? ''} onChange={set('seats')} />
+        <input className="field" aria-label="Reihe" placeholder="Reihe" value={f.row ?? ''} onChange={set('row')} />
+        <input className="field" aria-label="Sitze" placeholder="Sitze" value={f.seats ?? ''} onChange={set('seats')} />
       </div>
-      <textarea className="field" placeholder="kinoheld-Bestelltext einfügen (füllt Saal, Reihe, Sitze)" value={f.paste ?? ''} onChange={(e) => applyPaste(e.target.value)} />
-      <div className="chips-row">
+      <textarea className="field" aria-label="kinoheld-Bestelltext" placeholder="kinoheld-Bestelltext einfügen (füllt Saal, Reihe, Sitze)" value={f.paste ?? ''} onChange={(e) => applyPaste(e.target.value)} />
+      <div className="chips-row" role="group" aria-label="Begleitung">
         {members.filter((m) => m.id !== me.id).map((m) => (
-          <button key={m.id} className={`chip${f.companions?.includes(m.id) ? ' active' : ''}`} onClick={() => toggle(m.id)}>{m.name}</button>
+          <button key={m.id} className={`chip${f.companions?.includes(m.id) ? ' active' : ''}`} aria-pressed={Boolean(f.companions?.includes(m.id))} onClick={() => toggle(m.id)}>{m.name}</button>
         ))}
       </div>
-      <input className="field" placeholder="Notiz" value={f.note ?? ''} onChange={set('note')} maxLength={500} />
+      <input className="field" aria-label="Notiz" placeholder="Notiz" value={f.note ?? ''} onChange={set('note')} maxLength={500} />
       <MutationError mutation={save} />
       <MutationError mutation={del} />
       <div className="sheet-actions">

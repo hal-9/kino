@@ -34,9 +34,9 @@ export default function Login() {
       <h1 className="brand-title">LiLief-Kino</h1>
       <p className="sub">Welches Kino zeigt was, wann und in welchem Saal.</p>
       <form onSubmit={submit}>
-        <input className="field" type="email" placeholder="E-Mail" value={email} autoComplete="username"
+        <input className="field" type="email" aria-label="E-Mail" placeholder="E-Mail" value={email} autoComplete="username"
           onChange={(e) => setEmail(e.target.value)} required />
-        <input className="field" type="password" placeholder="Passwort" value={password} autoComplete="current-password"
+        <input className="field" type="password" aria-label="Passwort" placeholder="Passwort" value={password} autoComplete="current-password"
           onChange={(e) => setPassword(e.target.value)} required />
         {error && <p className="error" role="alert">{error}</p>}
         <button className="btn primary" type="submit" disabled={pending}>{pending ? 'Moment…' : 'Anmelden'}</button>

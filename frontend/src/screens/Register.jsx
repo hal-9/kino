@@ -40,10 +40,10 @@ export default function Register() {
       <h1 className="brand-title">Mitmachen</h1>
       <p className="sub">Du brauchst den Einladungscode der Kino-Crew.</p>
       <form onSubmit={submit}>
-        <input className="field" placeholder="Vorname" value={form.name} onChange={set('name')} autoComplete="given-name" required minLength={2} />
-        <input className="field" type="email" placeholder="E-Mail" value={form.email} onChange={set('email')} autoComplete="email" required />
-        <input className="field" type="password" placeholder="Passwort (mind. 8 Zeichen)" value={form.password} onChange={set('password')} autoComplete="new-password" required minLength={8} />
-        <input className="field" placeholder="Einladungscode" value={form.invite_code} onChange={set('invite_code')} autoComplete="off" required />
+        <input className="field" aria-label="Vorname" placeholder="Vorname" value={form.name} onChange={set('name')} autoComplete="given-name" required minLength={2} />
+        <input className="field" type="email" aria-label="E-Mail" placeholder="E-Mail" value={form.email} onChange={set('email')} autoComplete="email" required />
+        <input className="field" type="password" aria-label="Passwort (mindestens 8 Zeichen)" placeholder="Passwort (mind. 8 Zeichen)" value={form.password} onChange={set('password')} autoComplete="new-password" required minLength={8} />
+        <input className="field" aria-label="Einladungscode" placeholder="Einladungscode" value={form.invite_code} onChange={set('invite_code')} autoComplete="off" required />
         {error && <p className="error" role="alert">{error}</p>}
         <button className="btn primary" type="submit" disabled={pending}>{pending ? 'Moment…' : 'Registrieren'}</button>
       </form>

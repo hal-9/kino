@@ -376,5 +376,49 @@
     "next_ready": [
       "K08"
     ]
+  },
+  "K08": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "reproduced": {
+      "sheet": "Sheet.jsx had role=dialog only: no name, no aria-modal, no initial focus/containment, no Escape, no visible close, background focusable, no scroll lock or focus restore (tests failed 6/6 on old source)",
+      "votes": "vote buttons exposed only glyphs ✓ ? ✗ without pressed state; avatars only title",
+      "contrast (computed from tokens, not rendered)": "light: muted on bg 4.17, on surface 4.46, on surface2 3.85; white on accent 2.25; white on grad-to 3.16; danger on surface2 3.93. dark: on-primary on grad-from 4.43"
+    },
+    "commands": {
+      "npm test": "shared 23/23, backend 73/73, frontend 23/23; exit 0",
+      "npm run build": "exit 0",
+      "a11y tests against stashed pre-K08 Sheet/CSS/Vorschlaege": "9/9 failed (expected)"
+    },
+    "modified": [
+      "frontend/src/components/Sheet.jsx (portal to body; aria-modal + aria-label; focus dialog on open; Tab containment; Escape; visible 'Schließen' button; inert on all other body children incl. earlier sheets; body scroll lock; focus restore to trigger or <main> if trigger removed; dirty prop asks before dismiss; reduced motion -> no slide/spring)",
+      "frontend/src/index.css (token contrast fixes: --muted #5f6a64, --danger #b03a3a, --grad-to #c4513f, dark --grad-from #d4625a, new --on-accent for selected 'maybe'; global :focus-visible ring; .sheet-close)",
+      "frontend/src/screens/*.jsx, components/MovieSheet.jsx (dialog labels, aria-label on every input/select/textarea, aria-pressed on chips/vote/option toggles, aria-expanded, named avatars, vote group label, dirty drafts for proposal note and ticket links)",
+      "frontend/src/test/a11y.test.jsx"
+    ],
+    "acceptance": {
+      "K08-AC01": "partial: jsdom keyboard tests for focus-in, Tab containment, Escape; full create/vote/edit keyboard journey in a real browser not run",
+      "K08-AC02": "passed in jsdom (dialog aria-label, input aria-labels, role=alert errors from K07, vote aria-pressed + names); real screen reader: not run",
+      "K08-AC03": "passed (jsdom: Escape/close restore focus to trigger; removed trigger -> main)",
+      "K08-AC04": "partial: computed token pairs >= 4.5:1 in light and dark (test); rendered browser contrast incl. gradients/opacity states not measured - not run",
+      "K08-AC05": "partial: reduced motion honoured in CSS (existing) and Sheet JS (useReducedMotion, tested both paths); 200% text / narrow viewport / software keyboard / safe areas: not run"
+    },
+    "decisions": [
+      "No new dependency: hand-rolled focus management on the existing framer-motion sheet (native <dialog> not used: bottom-sheet drag animation and jsdom support).",
+      "Inputs get aria-label (persistent accessible name) and keep placeholders; visible persistent labels would change the UI identity - deferred.",
+      "Disabled controls keep opacity styling (WCAG exempts inactive components).",
+      "Initial focus goes to the dialog itself, not the first field, so the software keyboard does not pop up on open."
+    ],
+    "deferred": [
+      "visible persistent form labels (design change)",
+      "dirty-close prompt for the visit form (needs initial-vs-current diff)",
+      "measured rendered contrast in browser for gradient/opacity states"
+    ],
+    "gaps": [
+      "screen reader (VoiceOver), real keyboard, 200% text, narrow viewport, iOS software keyboard/safe areas: not run"
+    ],
+    "next_ready": [
+      "K09"
+    ]
   }
 }

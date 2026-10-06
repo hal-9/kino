@@ -19,7 +19,7 @@ export default function MovieSheet({ movieId, onClose }) {
     ['Originaltitel', m.title_original && m.title_original !== m.title ? m.title_original : null],
   ].filter(([, v]) => v)
   return (
-    <Sheet open={movieId != null} onClose={onClose}>
+    <Sheet open={movieId != null} onClose={onClose} label={m ? `Film-Details: ${m.title}` : 'Film-Details'}>
       {isLoading && <p className="muted">Lädt…</p>}
       <QueryError query={query} label="Film-Details" />
       {m && (

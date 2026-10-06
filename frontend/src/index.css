@@ -5,12 +5,13 @@
   --surface2: #f2eee7;
   --line: #e7e1d6;
   --text: #1f2a24;
-  --muted: #6f7a74;
+  --muted: #5f6a64;
   --primary: #a8323f;
   --primary-dim: #f5e1e3;
   --on-primary: #ffffff;
   --accent: #d9a441;
-  --danger: #c94c4c;
+  --danger: #b03a3a;
+  --on-accent: #1f2a24;
   --shadow: 0 4px 18px rgba(31, 42, 36, 0.06);
   --radius: 16px;
   --header-h: 56px;
@@ -19,7 +20,7 @@
   /* Display-Schrift wie bei LiLief-Workout (Space Grotesk), nur fuer Marke, Titel, grosse Zahlen. */
   --font-display: 'Space Grotesk', var(--font);
   --grad-from: #a8323f;
-  --grad-to: #e0705c;
+  --grad-to: #c4513f;
   --primary-grad: linear-gradient(135deg, var(--grad-from) 0%, var(--grad-to) 100%);
   color-scheme: light dark;
 }
@@ -37,8 +38,9 @@
     --on-primary: #1a0f0d;
     --accent: #e6b45a;
     --danger: #e07070;
+    --on-accent: #1a0f0d;
     --shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
-    --grad-from: #c9574e;
+    --grad-from: #d4625a;
     --grad-to: #f0a08a;
   }
 }
@@ -209,6 +211,7 @@ h1, h2, h3, p { margin: 0; }
   display: flex; flex-direction: column; max-height: 88dvh;
 }
 .grip-zone { flex: none; padding: 10px 0 8px; touch-action: none; cursor: grab; }
+.sheet-close { position: absolute; top: 6px; right: 8px; width: 44px; height: 44px; border-radius: 22px; font-size: 24px; line-height: 1; color: var(--muted); }
 .grip { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto; }
 .sheet-body { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 4px 16px 16px; overscroll-behavior: contain; }
 .sheet h3 { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
@@ -250,6 +253,10 @@ h1, h2, h3, p { margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
+
+/* Sichtbarer Tastaturfokus überall (Felder haben zusätzlich ihren Ring). */
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.sheet:focus-visible { outline: none; }
 
 /* Angebote */
 .chips-row { display: flex; gap: 8px; overflow-x: auto; padding: 0 2px 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
@@ -377,7 +384,7 @@ a.show:active, button.show:active { background: var(--surface2); }
 .tri { margin-left: auto; display: flex; gap: 6px; }
 .tri button { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-weight: 800; font-size: 15px; }
 .tri button.on { color: var(--on-primary); border-color: transparent; }
-.tri button.on.yes { background: var(--primary); } .tri button.on.maybe { background: var(--accent); } .tri button.on.no { background: var(--danger); }
+.tri button.on.yes { background: var(--primary); } .tri button.on.maybe { background: var(--accent); color: var(--on-accent); } .tri button.on.no { background: var(--danger); }
 .show.sel { background: var(--primary-dim); }
 .check-box { width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--line); display: grid; place-items: center; font-size: 14px; color: var(--on-primary); flex: none; }
 .show.sel .check-box { background: var(--primary); border-color: var(--primary); }

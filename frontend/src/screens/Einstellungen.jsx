@@ -43,7 +43,7 @@ export default function Einstellungen() {
         <h2 className="group-title">Letterboxd</h2>
         <div className="card pad">
           <p className="sub">Dein Nutzername, damit Bewertungen am nächsten Tag automatisch an den Besuch kommen.</p>
-          <input className="field" placeholder="letterboxd-Name" value={lb} onChange={(e) => { setLb(e.target.value); setSaved(false) }} />
+          <input className="field" aria-label="Letterboxd-Name" placeholder="letterboxd-Name" value={lb} onChange={(e) => { setLb(e.target.value); setSaved(false) }} />
           {lbError && <p className="stale" role="alert">{lbError}</p>}
           <button className="btn primary" onClick={saveLb}>{saved ? 'Gespeichert ✓' : 'Speichern'}</button>
         </div>

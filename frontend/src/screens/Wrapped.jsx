@@ -97,10 +97,10 @@ export default function Wrapped() {
     <>
       <div className="chips-row">
         <button className="chip" onClick={() => setYear(year - 1)}>‹ {year - 1}</button>
-        <button className="chip active">{year}</button>
+        <button className="chip active" aria-current="true">{year}</button>
         {year < new Date().getFullYear() && <button className="chip" onClick={() => setYear(year + 1)}>{year + 1} ›</button>}
-        <button className={`chip${scope === 'me' ? ' active' : ''}`} onClick={() => setScope('me')}>Ich</button>
-        <button className={`chip${scope === 'group' ? ' active' : ''}`} onClick={() => setScope('group')}>Gruppe</button>
+        <button className={`chip${scope === 'me' ? ' active' : ''}`} aria-pressed={scope === 'me'} onClick={() => setScope('me')}>Ich</button>
+        <button className={`chip${scope === 'group' ? ' active' : ''}`} aria-pressed={scope === 'group'} onClick={() => setScope('group')}>Gruppe</button>
       </div>
       {isLoading && <p className="muted">Lädt…</p>}
       <QueryError query={query} label="Statistiken" />

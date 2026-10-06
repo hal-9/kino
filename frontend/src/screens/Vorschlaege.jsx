@@ -9,6 +9,7 @@ import MovieHeader from '../components/MovieHeader.jsx'
 import { initial } from '../components/Header.jsx'
 
 const MARK = { yes: '✓', maybe: '?', no: '✗' }
+const SAY = { yes: 'Ja', maybe: 'Vielleicht', no: 'Nein' }
 const when = (iso) => new Date(iso).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'numeric', timeZone: 'Europe/Berlin' }) + ' · ' + iso.slice(11, 16)
 
 function score(o) {
@@ -75,14 +76,14 @@ function Proposal({ p, members, me }) {
               <small className="muted">{[s.cinema_name, s.auditorium].filter(Boolean).join(' · ')}</small>
               <div className="opt-votes">
                 {members.map((m) => (
-                  <span key={m.id} className={`avatar v-${voteOf(m.id) ?? 'none'}`} title={`${m.name}: ${voteOf(m.id) ?? 'offen'}`}>
-                    {initial(m.name)}<i>{MARK[voteOf(m.id)] ?? ''}</i>
+                  <span key={m.id} className={`avatar v-${voteOf(m.id) ?? 'none'}`} role="img" aria-label={`${m.name}: ${SAY[voteOf(m.id)] ?? 'offen'}`} title={`${m.name}: ${SAY[voteOf(m.id)] ?? 'offen'}`}>
+                    <span aria-hidden="true">{initial(m.name)}<i>{MARK[voteOf(m.id)] ?? ''}</i></span>
                   </span>
                 ))}
                 {p.status === 'open' && (
-                  <span className="tri">
+                  <span className="tri" role="group" aria-label={`Meine Stimme für ${when(s.starts_at)}`}>
                     {['yes', 'maybe', 'no'].map((v) => (
-                      <button key={v} className={mine === v ? `on ${v}` : ''} onClick={() => castVote(o.id, v)}>{MARK[v]}</button>
+                      <button key={v} className={mine === v ? `on ${v}` : ''} aria-pressed={mine === v} aria-label={SAY[v]} onClick={() => castVote(o.id, v)}>{MARK[v]}</button>
                     ))}
                   </span>
                 )}
@@ -115,16 +116,16 @@ function Proposal({ p, members, me }) {
 
       <MovieSheet movieId={info ? p.movie.id : null} onClose={() => setInfo(false)} />
 
-      <Sheet open={pick != null} onClose={() => setPick(null)}>
+      <Sheet open={pick != null} onClose={() => setPick(null)} label="Welche Vorstellung ist gebucht?" dirty={link.trim() !== ''}>
         <h3>Welche Vorstellung ist gebucht?</h3>
         <div className="cat-grid" style={{ gridTemplateColumns: '1fr' }}>
           {p.options.map((o) => (
-            <button key={o.id} className={pick === o.id ? 'active' : ''} onClick={() => setPick(o.id)}>
+            <button key={o.id} className={pick === o.id ? 'active' : ''} aria-pressed={pick === o.id} onClick={() => setPick(o.id)}>
               {when(o.snapshot.starts_at)} · {o.snapshot.cinema_name}
             </button>
           ))}
         </div>
-        <input className="field" type="url" placeholder="Ticket-Link aus der Bestätigungs-Mail (optional)" value={link} onChange={(e) => setLink(e.target.value)} />
+        <input className="field" type="url" aria-label="Ticket-Link (optional)" placeholder="Ticket-Link aus der Bestätigungs-Mail (optional)" value={link} onChange={(e) => setLink(e.target.value)} />
         <MutationError mutation={book} text={(e) => (e.code === 'expired' ? 'Diese Vorstellung hat schon begonnen.' : errorText(e))} />
         <div className="sheet-actions">
           <button className="btn" onClick={() => setPick(null)}>Abbrechen</button>
@@ -132,10 +133,10 @@ function Proposal({ p, members, me }) {
         </div>
       </Sheet>
 
-      <Sheet open={ticketSheet} onClose={() => setTicketSheet(false)}>
+      <Sheet open={ticketSheet} onClose={() => setTicketSheet(false)} label="Ticket-Link" dirty={link.trim() !== (p.ticket_link ?? '')}>
         <h3>Ticket-Link</h3>
         <p className="sub">Link zu den gekauften Tickets (Wallet, PDF oder Bestätigungsseite). Er landet im Kalendereintrag.</p>
-        <input className="field" type="url" placeholder="https://…" value={link} onChange={(e) => setLink(e.target.value)} />
+        <input className="field" type="url" aria-label="Ticket-Link" placeholder="https://…" value={link} onChange={(e) => setLink(e.target.value)} />
         <MutationError mutation={saveTicket} />
         <div className="sheet-actions">
           <button className="btn" onClick={() => setTicketSheet(false)}>Abbrechen</button>
@@ -143,7 +144,7 @@ function Proposal({ p, members, me }) {
         </div>
       </Sheet>
 
-      <Sheet open={abo} onClose={() => setAbo(false)}>
+      <Sheet open={abo} onClose={() => setAbo(false)} label="Kalender abonnieren">
         <h3>Kalender abonnieren</h3>
         <p className="sub">Einmal abonnieren reicht: alle künftigen Buchungen erscheinen automatisch. Auf dem iPhone öffnet der Link den Abo-Dialog.</p>
         {cal.data && <a className="btn primary" href={cal.data.webcal_url}>In Kalender öffnen</a>}

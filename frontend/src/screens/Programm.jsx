@@ -26,7 +26,7 @@ function Row({ s, showDate, onPropose }) {
         {s.version && <span className={`badge ${s.version === 'DF' ? '' : 'ov'}`}>{s.version}</span>}
       </div>
       <div className="slot-actions">
-        <button className="mini primary" onClick={onPropose}>Vorschlagen</button>
+        <button className="mini primary" onClick={onPropose} aria-label={`Vorschlagen: ${s.cinema_name} ${time(s.starts_at)}`}>Vorschlagen</button>
         {s.ticket_url && <a className="mini" href={s.ticket_url} target="_blank" rel="noreferrer">Buchen ↗</a>}
       </div>
     </div>
@@ -44,7 +44,7 @@ function MovieCard({ movie, favOnly, showDate, onPropose, onInfo }) {
       <div className="card">
         {fav.map(row)}
         {rest.length > 0 && fav.length > 0 && (
-          <button className="show more" onClick={() => setOpen(!open)}>
+          <button className="show more" aria-expanded={open} onClick={() => setOpen(!open)}>
             {open ? '▾' : '▸'} Weitere Kinos ({rest.length})
           </button>
         )}
@@ -101,17 +101,17 @@ export default function Programm() {
   return (
     <>
       {stale.length > 0 && <p className="stale">⚠ Veraltet: {stale.map((s) => s.source).join(', ')}</p>}
-      <input className="field" type="search" placeholder="Film suchen…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <input className="field" type="search" aria-label="Film suchen" placeholder="Film suchen…" value={q} onChange={(e) => setQ(e.target.value)} />
       {!searching && (
         <div className="chips-row">
           {dayList.slice(0, 14).map((d) => (
-            <button key={d} className={`chip${d === activeDay ? ' active' : ''}`} onClick={() => setDay(d)}>{dayLabel(d, berlinYmd())}</button>
+            <button key={d} className={`chip${d === activeDay ? ' active' : ''}`} aria-pressed={d === activeDay} onClick={() => setDay(d)}>{dayLabel(d, berlinYmd())}</button>
           ))}
         </div>
       )}
       <div className="chips-row">
-        <button className={`chip${ov ? ' active' : ''}`} onClick={() => setOv(!ov)}>OV/OmU</button>
-        <button className={`chip${favOnly ? ' active' : ''}`} onClick={() => setFavOnly(!favOnly)}>Nur Favoriten</button>
+        <button className={`chip${ov ? ' active' : ''}`} aria-pressed={ov} onClick={() => setOv(!ov)}>OV/OmU</button>
+        <button className={`chip${favOnly ? ' active' : ''}`} aria-pressed={favOnly} onClick={() => setFavOnly(!favOnly)}>Nur Favoriten</button>
       </div>
       {program.isLoading && <p className="muted">Lädt…</p>}
       <QueryError query={days.data ? program : days} label="Programm" />
@@ -120,12 +120,12 @@ export default function Programm() {
       )}
       {movies.map((m) => <MovieCard key={m.id} movie={m} favOnly={favOnly} showDate={searching} onPropose={(movie, screening) => setDraft({ movie, screening, key: newKey() })} onInfo={setInfo} />)}
       <MovieSheet movieId={info} onClose={() => setInfo(null)} />
-      <Sheet open={draft != null} onClose={closeDraft}>
+      <Sheet open={draft != null} onClose={closeDraft} label="Vorschlag senden" dirty={note.trim() !== ''}>
         {draft && (
           <>
             <h3>{draft.movie.title} vorschlagen</h3>
             <p className="sub">{dateShort(draft.screening.starts_at)} · {time(draft.screening.starts_at)} · {draft.screening.cinema_name}{draft.screening.version ? ` · ${draft.screening.version}` : ''}</p>
-            <textarea className="field" placeholder="Notiz (optional)" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} />
+            <textarea className="field" aria-label="Notiz (optional)" placeholder="Notiz (optional)" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} />
             {create.isError && (
               <p className="stale" role="alert">{create.error.code === 'expired' ? 'Diese Vorstellung hat schon begonnen. Bitte eine andere wählen.'
                 : create.error.code === 'idempotency key reused' ? 'Vielleicht schon gesendet. Bitte unter Vorschläge prüfen.'
