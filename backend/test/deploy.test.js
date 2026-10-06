@@ -117,6 +117,20 @@ describe('deploy/deploy.sh (K24, isoliert mit Stubs)', () => {
   })
 })
 
+describe('deploy/backup.sh (K32: Ticket-Dateien)', () => {
+  it('sichert uploads/ als Archiv neben dem DB-Backup; ohne Ordner kein Archiv', () => {
+    expect(run('backup.sh', {}, ['t1']).status).toBe(0)
+    expect(fs.readdirSync(path.join(root, 'backups')).some((f) => f.startsWith('uploads_'))).toBe(false)
+    fs.mkdirSync(path.join(root, 'data', 'uploads'))
+    fs.writeFileSync(path.join(root, 'data', 'uploads', 'abc123'), 'pdf')
+    const r = run('backup.sh', {}, ['t2'])
+    expect(r.status).toBe(0)
+    const tgz = fs.readdirSync(path.join(root, 'backups')).find((f) => f.startsWith('uploads_') && f.endsWith('_t2.tgz'))
+    expect(execFileSync('tar', ['-tzf', path.join(root, 'backups', tgz)]).toString()).toContain('uploads/abc123')
+    expect(fs.readFileSync(calls, 'utf8')).not.toMatch(/^(ssh|scp|curl|wget) /m)
+  })
+})
+
 describe('deploy/compose.yml (K24-AC05, statisch)', () => {
   it('behält Nicht-root, read-only, no-new-privileges; kein privileged', () => {
     const c = fs.readFileSync(path.join(deployDir, 'compose.yml'), 'utf8')

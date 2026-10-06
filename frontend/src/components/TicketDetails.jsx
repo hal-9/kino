@@ -15,7 +15,7 @@ const failText = (e) =>
 
 // K31: Bestätigungstext einfügen → lokal auslesen → prüfen → strukturierte Werte speichern.
 // Der Text verlässt das Gerät nicht; Links werden nie abgerufen.
-export default function TicketDetails({ p, snapshot, open, onClose, onSaved }) {
+export default function TicketDetails({ p, snapshot, open, onClose, onSaved, prefill }) {
   const [text, setText] = useState('')
   const [f, setF] = useState({ date: '', time: '', auditorium: '', seats: '', link: '' })
   const [checked, setChecked] = useState(false)
@@ -25,7 +25,9 @@ export default function TicketDetails({ p, snapshot, open, onClose, onSaved }) {
     key.current = newKey()
     setText('')
     setChecked(false)
-    setF({ date: '', time: '', auditorium: p.ticket?.auditorium ?? '', seats: seatsText(p.ticket?.seats ?? []), link: '' })
+    // K32: aus einer Ticket-Datei erkannte Werte vorbelegen; geprüft und gespeichert wird wie beim Einfügen.
+    setF({ date: prefill?.date ?? '', time: prefill?.time ?? '', auditorium: prefill?.auditorium ?? p.ticket?.auditorium ?? '',
+      seats: seatsText(prefill?.seats?.length ? prefill.seats : p.ticket?.seats ?? []), link: '' })
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function paste(value) {

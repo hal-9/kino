@@ -28,6 +28,8 @@ export const api = {
   put: (path, body) => request(path, { method: 'PUT', body: JSON.stringify(body) }),
   patch: (path, body) => request(path, { method: 'PATCH', body: JSON.stringify(body) }),
   delete: (path) => request(path, { method: 'DELETE' }),
+  // K32: Datei als Body; Content-Type = Dateityp (Server prüft den Inhalt selbst).
+  upload: (path, file) => request(path, { method: 'POST', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } }),
 }
 
 // Sichere, nutzerverständliche Meldung je Status; keine Server-Interna.

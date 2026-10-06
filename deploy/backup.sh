@@ -14,5 +14,10 @@ sqlite3 "$DB" ".backup '$OUT'"
 # Eigenständige Datei ohne WAL/-shm (lässt sich read-only prüfen und als eine Datei kopieren).
 sqlite3 "$OUT" "PRAGMA journal_mode=DELETE;" >/dev/null
 "$(dirname "$0")/verify-backup.sh" "$OUT" >&2
-find "$DIR" -name "app_*.db" -mtime +14 -delete
+# K32: private Ticket-Dateien (liegen neben der DB, nicht im Frontend) mitsichern; Wiederherstellen: tar -xzf … -C "$ROOT/data".
+UP="${KINO_UPLOADS:-$(dirname "$DB")/uploads}"
+if [ -d "$UP" ]; then
+  tar -C "$(dirname "$UP")" -czf "$DIR/uploads_${TS}${LABEL:+_$LABEL}.tgz" "$(basename "$UP")"
+fi
+find "$DIR" \( -name "app_*.db" -o -name "uploads_*.tgz" \) -mtime +14 -delete
 echo "$OUT"

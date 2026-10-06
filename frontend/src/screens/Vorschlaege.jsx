@@ -8,6 +8,7 @@ import MovieSheet from '../components/MovieSheet.jsx'
 import MovieHeader from '../components/MovieHeader.jsx'
 import CalendarLink from '../components/CalendarLink.jsx'
 import TicketDetails, { seatsText } from '../components/TicketDetails.jsx'
+import TicketFiles from '../components/TicketFiles.jsx'
 import { initial } from '../components/Header.jsx'
 import { nextStep, tally } from '../lib/decision.js'
 import { address, directionsUrl, endText, nextOuting } from '../lib/outing.js'
@@ -109,6 +110,7 @@ function Proposal({ p, members, me, history }) {
   const [info, setInfo] = useState(false)
   const [ticketSheet, setTicketSheet] = useState(false)
   const [seatSheet, setSeatSheet] = useState(false)
+  const [prefill, setPrefill] = useState(null)
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['proposals'] }), qc.invalidateQueries({ queryKey: ['proposal'] })])
   // Ein Idempotency-Key je geöffneter Aktion; Wiederholung nach Netzabbruch liefert das Original.
   const key = useRef(null)
@@ -266,7 +268,7 @@ function Proposal({ p, members, me, history }) {
             <button className="btn" onClick={() => setAbo(true)}>Kalender abonnieren</button>
             {past && <Link className="btn" to="/besuche">Zum Besuch</Link>}
             {!past && <button className="btn" onClick={openMeeting}>Treffpunkt</button>}
-            {!past && <button className="btn" onClick={() => setSeatSheet(true)}>Ticketdaten einfügen</button>}
+            {!past && <button className="btn" onClick={() => { setPrefill(null); setSeatSheet(true) }}>Ticketdaten einfügen</button>}
             {!past && <button className="btn" onClick={openPick}>Umbuchen</button>}
             {!past && <button className="btn" disabled={cancel.isPending} onClick={confirmCancel}>Absagen</button>}
             {!past && <button className="btn" disabled={reopen.isPending} onClick={confirmReopen}>Wieder öffnen</button>}
@@ -351,7 +353,8 @@ function Proposal({ p, members, me, history }) {
         </div>
       </Sheet>
 
-      {booked && <TicketDetails p={p} snapshot={booked.snapshot} open={seatSheet} onClose={() => setSeatSheet(false)} onSaved={refresh} />}
+      {p.status === 'booked' && !past && <TicketFiles p={p} me={me} onReview={(f) => { setPrefill(f); setSeatSheet(true) }} />}
+      {booked && <TicketDetails p={p} snapshot={booked.snapshot} open={seatSheet} onClose={() => setSeatSheet(false)} onSaved={refresh} prefill={prefill} />}
 
       <Sheet open={abo} onClose={() => setAbo(false)} label="Kalender abonnieren">
         <h3>Kalender abonnieren</h3>
