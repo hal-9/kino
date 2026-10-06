@@ -70,7 +70,8 @@ export function eventForProposal(db, proposalId, base) {
     summary: `🎬 ${s.title}${s.version ? ` (${s.version})` : ''} · ${s.cinema_name}`,
     location: place,
     geo: s.lat != null && s.lng != null ? `${s.lat};${s.lng}` : null,
-    description: [s.auditorium, who.length && `dabei: ${who.join(', ')}`, s.ticket_url && `Tickets: ${s.ticket_url}`, `Vorschlag: ${link}`].filter(Boolean).join(' · '),
-    url: link,
+    // Kein Kauf-Link: nach der Buchung zählt nur der Link zu den echten Tickets.
+    description: [s.auditorium, who.length && `dabei: ${who.join(', ')}`, p.ticket_link && `Tickets: ${p.ticket_link}`].filter(Boolean).join(' · '),
+    url: p.ticket_link || link,
   })
 }

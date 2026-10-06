@@ -68,6 +68,24 @@ describe('Vorschläge + Kalender', () => {
     for (const line of t.split('\r\n')) expect(Buffer.byteLength(line)).toBeLessThanOrEqual(75)
   })
 
+  it('Ticket-Link: beim Buchen oder später, landet als URL im Kalender, kein Kauf-Link', async () => {
+    db.prepare("UPDATE screenings SET ticket_url = 'https://kaufen.example/x'").run()
+    const p = (await create()).body
+    const book = (body) => request(app).post(`/api/proposals/${p.id}/book`).set('Cookie', c1).send({ option_id: p.options[0].id, ...body })
+    expect((await book({ ticket_link: 'javascript:alert(1)' })).status).toBe(422)
+    const ok = await book({})
+    expect(ok.body.ticket_link).toBeNull()
+    let ics = (await request(app).get(`/api/proposals/${p.id}.ics`).set('Cookie', c1)).text
+    expect(ics).not.toContain('kaufen.example')
+    expect(ics).toMatch(/URL:https?:\/\/[^\r]+\/vorschlaege\/\d+/)
+    const put = await request(app).put(`/api/proposals/${p.id}/ticket`).set('Cookie', c2).send({ ticket_link: 'https://tickets.example/abc' })
+    expect(put.body.ticket_link).toBe('https://tickets.example/abc')
+    ics = (await request(app).get(`/api/proposals/${p.id}.ics`).set('Cookie', c1)).text.replace(/\r\n /g, '')
+    expect(ics).toContain('URL:https://tickets.example/abc')
+    expect(ics).toContain('Tickets: https://tickets.example/abc')
+    expect(ics).not.toContain('kaufen.example')
+  })
+
   it('fold teilt keine Mehrbyte-Zeichen', () => {
     const f = fold('X:' + 'ä'.repeat(100)).split('\r\n')
     expect(f.length).toBeGreaterThan(1)

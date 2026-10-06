@@ -34,7 +34,28 @@ describe('Besuche + Letterboxd', () => {
     expect(res.body).toMatchObject({ row: '9', seats: '11, 12', auditorium: 'Kino 2', snapshot: { title: 'Tag im Leben', cinema_name: 'Delphi LUX' } })
     expect(res.body.companions).toEqual([1])
     expect((await request(app).get('/api/visits/pending').set('Cookie', c2)).body.pending).toHaveLength(0)
-    expect((await request(app).get('/api/visits/pending').set('Cookie', c1)).body.pending).toHaveLength(1)
+    // c1 hat ✓ gestimmt: Besuch wurde automatisch angelegt, nichts offen
+    expect((await request(app).get('/api/visits/pending').set('Cookie', c1)).body.pending).toHaveLength(0)
+  })
+
+  it('Auto-Besuch für alle ✓-Wähler nach Ende der Vorstellung, gelöscht bleibt gelöscht', async () => {
+    const p = (await request(app).post('/api/proposals').set('Cookie', c1).send({ movie_id: movieId, screening_ids: shows })).body
+    await request(app).put(`/api/proposals/${p.id}/votes/${p.options[0].id}`).set('Cookie', c2).send({ value: 'yes' })
+    await request(app).post(`/api/proposals/${p.id}/book`).set('Cookie', c1).send({ option_id: p.options[0].id })
+    const list = (await request(app).get('/api/visits').set('Cookie', c1)).body.visits
+    expect(list).toHaveLength(2)
+    const mine = list.find((v) => v.user_id === 1)
+    expect(mine).toMatchObject({ proposal_id: p.id, watched_on: '2020-10-04', auditorium: 'Kino 2', companions: [2] })
+    await request(app).delete(`/api/visits/${mine.id}`).set('Cookie', c1).expect(204)
+    expect((await request(app).get('/api/visits').set('Cookie', c1)).body.visits).toHaveLength(1)
+    expect((await request(app).get('/api/visits/pending').set('Cookie', c1)).body.pending).toHaveLength(0)
+  })
+
+  it('Zukünftige Buchung erzeugt noch keinen Besuch', async () => {
+    db.prepare("UPDATE screenings SET starts_at = '2099-10-04T20:00:00+02:00' WHERE id = ?").run(shows[0])
+    const p = (await request(app).post('/api/proposals').set('Cookie', c1).send({ movie_id: movieId, screening_ids: shows })).body
+    await request(app).post(`/api/proposals/${p.id}/book`).set('Cookie', c1).send({ option_id: p.options.find((o) => o.snapshot.starts_at.startsWith('2099')).id })
+    expect((await request(app).get('/api/visits').set('Cookie', c1)).body.visits).toHaveLength(0)
   })
 
   it('Freitext-Besuch, nur Ersteller darf ändern/löschen, alle sehen alle', async () => {

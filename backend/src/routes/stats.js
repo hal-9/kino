@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { requireAuth } from '../auth.js'
+import { materializeVisits } from '../autoVisits.js'
 
 const OV = new Set(['OV', 'OmU', 'OmeU'])
 
@@ -21,6 +22,7 @@ export function statsRouter(db) {
     const scope = req.query.scope === 'group' ? 'group' : 'me'
     if (!/^\d{4}$/.test(year)) return res.status(422).json({ error: 'validation failed' })
 
+    materializeVisits(db, req.user.householdId)
     const rows = db
       .prepare(
         `SELECT v.*, m.runtime AS movie_runtime FROM visits v LEFT JOIN movies m ON m.id = v.movie_id

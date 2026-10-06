@@ -9,7 +9,9 @@ const createSchema = z.object({
   note: z.string().trim().max(300).optional(),
 })
 const voteSchema = z.object({ value: z.enum(['yes', 'maybe', 'no']) })
-const bookSchema = z.object({ option_id: z.number().int() })
+const link = z.string().trim().url().max(500).refine((u) => /^https?:\/\//i.test(u))
+const bookSchema = z.object({ option_id: z.number().int(), ticket_link: link.nullish() })
+const ticketSchema = z.object({ ticket_link: link.nullable() })
 
 export function loadProposals(db, householdId, id) {
   const rows = db
@@ -28,6 +30,7 @@ export function loadProposals(db, householdId, id) {
     note: p.note,
     created_by: p.created_by,
     booked_option_id: p.booked_option_id,
+    ticket_link: p.ticket_link,
     options: opts.all(p.id).map((o) => ({
       id: o.id,
       snapshot: JSON.parse(o.snapshot_json),
@@ -112,8 +115,20 @@ export function proposalsRouter(db) {
       return res.status(404).json({ error: 'not found' })
     }
     db.prepare(
-      `UPDATE proposals SET status = 'booked', booked_option_id = ?, booked_by = ?, booked_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`
-    ).run(parsed.data.option_id, req.user.id, p.id)
+      `UPDATE proposals SET status = 'booked', booked_option_id = ?, booked_by = ?, booked_at = datetime('now'), updated_at = datetime('now'),
+       ticket_link = COALESCE(?, ticket_link) WHERE id = ?`
+    ).run(parsed.data.option_id, req.user.id, parsed.data.ticket_link ?? null, p.id)
+    res.json(loadProposals(db, req.user.householdId, p.id)[0])
+  })
+
+  // Link zu den gekauften Tickets (aus der Bestätigungs-Mail); landet im Kalendereintrag.
+  router.put('/proposals/:id/ticket', (req, res) => {
+    const p = own(req, res)
+    if (!p) return
+    const parsed = ticketSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(422).json({ error: 'validation failed' })
+    if (p.status !== 'booked') return res.status(409).json({ error: 'not booked' })
+    db.prepare("UPDATE proposals SET ticket_link = ?, updated_at = datetime('now') WHERE id = ?").run(parsed.data.ticket_link, p.id)
     res.json(loadProposals(db, req.user.householdId, p.id)[0])
   })
 

@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { normTitle } from 'shared'
 import { requireAuth } from '../auth.js'
+import { materializeVisits } from '../autoVisits.js'
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 const fields = {
@@ -59,6 +60,7 @@ export function visitsRouter(db) {
   }
 
   router.get('/visits', (req, res) => {
+    materializeVisits(db, req.user.householdId)
     const year = String(req.query.year ?? '')
     if (year && !/^\d{4}$/.test(year)) return res.status(422).json({ error: 'validation failed' })
     const visits = year
@@ -68,14 +70,16 @@ export function visitsRouter(db) {
   })
 
   router.get('/visits/pending', (req, res) => {
+    materializeVisits(db, req.user.householdId)
     const rows = db
       .prepare(
         `SELECT p.id AS proposal_id, o.snapshot_json FROM proposals p JOIN proposal_options o ON o.id = p.booked_option_id
          WHERE p.household_id = ? AND p.status = 'booked' AND datetime(json_extract(o.snapshot_json, '$.starts_at')) < datetime('now')
            AND NOT EXISTS (SELECT 1 FROM visits v WHERE v.proposal_id = p.id AND v.user_id = ?)
+           AND NOT EXISTS (SELECT 1 FROM auto_visits a WHERE a.proposal_id = p.id AND a.user_id = ?)
          ORDER BY json_extract(o.snapshot_json, '$.starts_at') DESC`
       )
-      .all(req.user.householdId, req.user.id)
+      .all(req.user.householdId, req.user.id, req.user.id)
     res.json({ pending: rows.map((r) => ({ proposal_id: r.proposal_id, snapshot: JSON.parse(r.snapshot_json) })) })
   })
 

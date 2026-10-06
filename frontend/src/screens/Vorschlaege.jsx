@@ -17,9 +17,12 @@ function Proposal({ p, members, me }) {
   const qc = useQueryClient()
   const [pick, setPick] = useState(null)
   const [abo, setAbo] = useState(false)
+  const [link, setLink] = useState('')
+  const [ticketSheet, setTicketSheet] = useState(false)
   const refresh = () => qc.invalidateQueries({ queryKey: ['proposals'] })
   const vote = useMutation({ mutationFn: ({ o, value }) => api.put(`/proposals/${p.id}/votes/${o}`, { value }), onSuccess: refresh })
-  const book = useMutation({ mutationFn: (option_id) => api.post(`/proposals/${p.id}/book`, { option_id }), onSuccess: () => { setPick(null); refresh() } })
+  const book = useMutation({ mutationFn: (option_id) => api.post(`/proposals/${p.id}/book`, { option_id, ticket_link: link.trim() || undefined }), onSuccess: () => { setPick(null); setLink(''); refresh() } })
+  const saveTicket = useMutation({ mutationFn: () => api.put(`/proposals/${p.id}/ticket`, { ticket_link: link.trim() || null }), onSuccess: () => { setTicketSheet(false); refresh() } })
   const cancel = useMutation({ mutationFn: () => api.post(`/proposals/${p.id}/cancel`), onSuccess: refresh })
   const cal = useQuery({ queryKey: ['cal'], queryFn: () => api.get('/cal/token'), enabled: abo })
 
@@ -72,9 +75,13 @@ function Proposal({ p, members, me }) {
         )}
         {p.status === 'booked' && (
           <>
+            {p.ticket_link
+              ? <a className="btn primary" href={p.ticket_link} target="_blank" rel="noreferrer">Tickets öffnen</a>
+              : <button className="btn primary" onClick={() => { setLink(''); setTicketSheet(true) }}>Ticket-Link hinzufügen</button>}
+            {p.ticket_link && <button className="btn" onClick={() => { setLink(p.ticket_link); setTicketSheet(true) }}>Link ändern</button>}
             <a className="btn" href={`/api/proposals/${p.id}.ics`}>.ics laden</a>
             <button className="btn" onClick={() => setAbo(true)}>Kalender abonnieren</button>
-            {past && <Link className="btn primary" to={`/besuche?proposal=${p.id}`}>Besuch eintragen</Link>}
+            {past && <Link className="btn" to="/besuche">Zum Besuch</Link>}
           </>
         )}
       </div>
@@ -88,9 +95,20 @@ function Proposal({ p, members, me }) {
             </button>
           ))}
         </div>
+        <input className="field" type="url" placeholder="Ticket-Link aus der Bestätigungs-Mail (optional)" value={link} onChange={(e) => setLink(e.target.value)} />
         <div className="sheet-actions">
           <button className="btn" onClick={() => setPick(null)}>Abbrechen</button>
           <button className="btn primary" onClick={() => book.mutate(pick)} disabled={book.isPending}>Als gebucht speichern</button>
+        </div>
+      </Sheet>
+
+      <Sheet open={ticketSheet} onClose={() => setTicketSheet(false)}>
+        <h3>Ticket-Link</h3>
+        <p className="sub">Link zu den gekauften Tickets (Wallet, PDF oder Bestätigungsseite). Er landet im Kalendereintrag.</p>
+        <input className="field" type="url" placeholder="https://…" value={link} onChange={(e) => setLink(e.target.value)} />
+        <div className="sheet-actions">
+          <button className="btn" onClick={() => setTicketSheet(false)}>Abbrechen</button>
+          <button className="btn primary" disabled={saveTicket.isPending} onClick={() => saveTicket.mutate()}>Speichern</button>
         </div>
       </Sheet>
 
