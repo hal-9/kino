@@ -1616,5 +1616,42 @@
       "K34",
       "K35"
     ]
+  },
+  "K34": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "scope": "Deterministic, local German sentence -> strict K14 filter schema (tag, q, ov, fav, ab, bis) with visible unresolved values and candidates, strict validation of any provider output, pluggable provider interface, review-then-apply UI hook in Programm. No model provider, no API keys, no network.",
+    "commands": {
+      "npm test": "shared 47/47, backend 183/183, frontend 86/86; exit 0",
+      "npm run build": "exit 0"
+    },
+    "modified": [
+      "shared/concierge.js (new: FILTER_KEYS, validateFilters, parseFilterText, concierge(text, { today, provider })), shared/concierge.test.js (new), shared/index.js",
+      "frontend/src/screens/Programm.jsx (Concierge details panel: Verstehen -> preview -> Übernehmen / candidate buttons)",
+      "frontend/src/test/filters.test.jsx (K34 case)"
+    ],
+    "migration_notes": "No schema change.",
+    "acceptance": {
+      "K34-AC01": "passed (sentence -> {q, tag, ab, bis, ov, fav}; applying only rewrites Programm URL filters, results come from the normal /program query)",
+      "K34-AC02": "passed (weekday -> unresolved with two candidate dates; 'ab 8' -> 08:00/20:00 candidates; 'früh zu Hause' and 'deutsch' unresolved without invented values; invalid hour ignored)",
+      "K34-AC03": "passed (provider outputs with screening_id/action/invalid date/non-boolean/oversized or control-char q/bad unresolved are rejected; prompt-injection text yields no filters and no write; UI test shows no non-GET request)",
+      "K34-AC04": "passed (throwing sync/async provider -> ok:false 'provider_failed'; UI shows 'Nicht verstanden' and leaves filters untouched)",
+      "K34-AC05": "passed for deterministic path (no fetch called). Model-backed provider: not run / not built - needs owner approval for provider, cost, privacy, server-side secret and feature flag"
+    },
+    "decisions": [
+      "Deterministic parsing suffices for the filter vocabulary; any future model provider must return the same object and pass validateFilters.",
+      "Model path would be server-side only, off by default, with minimal context (sentence + today), never tickets/schedules/secrets."
+    ],
+    "deferred": [
+      "model-backed provider (owner approval required)",
+      "DF/German-audio filter (no such filter in K14 schema; reported as unresolved)"
+    ],
+    "gaps": [
+      "model provider: not run (needs owner approval)",
+      "real browser check of the panel: not run"
+    ],
+    "next_ready": [
+      "K35"
+    ]
   }
 }

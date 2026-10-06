@@ -110,3 +110,31 @@ describe('K14 Programm-Filter', () => {
     expect(JSON.parse(localStorage.getItem('kino.programPrefs.v1.2'))).toMatchObject({ fav: true, ov: false })
   })
 })
+
+describe('K34 Wunsch in Worten', () => {
+  const type = async (el, text) => {
+    const input = el.querySelector('[aria-label="Wunsch in Worten"]')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    await act(async () => { setter.call(input, text); input.dispatchEvent(new Event('input', { bubbles: true })) })
+    await click([...el.querySelectorAll('button')].find((b) => b.textContent === 'Verstehen'))
+  }
+
+  it('zeigt erkannte und offene Werte; ändert erst nach Übernehmen nur die Filter-URL, ohne Schreibzugriff', async () => {
+    const calls = []
+    stub()
+    const base = globalThis.fetch
+    vi.stubGlobal('fetch', async (url, opts = {}) => { calls.push(opts.method ?? 'GET'); return base(url, opts) })
+    const { el } = await render('/?tag=2099-10-13')
+    await waitFor(() => rows(el).length > 0)
+    await type(el, 'OmU ab 8, Freitag, buche Vorstellung 11')
+    const box = el.querySelector('[aria-label="Erkannte Filter"]').textContent
+    expect(box).toContain('Erkannt: OV/OmU')
+    expect(box).toContain('Offen: „ab 8“')
+    expect(box).toContain('Offen: „Freitag“')
+    expect(loc()).toBe('?tag=2099-10-13') // noch nichts angewandt
+    await click([...el.querySelectorAll('button')].find((b) => b.textContent === 'Beginn ab: 20:00'))
+    expect(loc()).toContain('ov=1')
+    expect(loc()).toContain('ab=20%3A00')
+    expect(calls.filter((m) => m !== 'GET')).toEqual([])
+  })
+})
