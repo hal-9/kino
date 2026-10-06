@@ -1,5 +1,5 @@
 import { berlinIso } from 'shared'
-import { decodeEntities, getOk } from './util.js'
+import { decodeEntities, getHtml } from './util.js'
 
 export const MIN_ROWS = 50
 const ATTRS = { isens: 'iSense', imax: 'IMAX', '3d': '3D', '4dx': '4DX', screenx: 'ScreenX' }
@@ -34,6 +34,6 @@ export function parseUci(html) {
 }
 
 export async function fetchShows(ctx) {
-  const html = await (await getOk(ctx, 'https://www.uci-kinowelt.de/kinoprogramm/berlin-mercedes-platz/82', { headers: { accept: 'text/html' } })).text()
+  const html = await getHtml(ctx, 'https://www.uci-kinowelt.de/kinoprogramm/berlin-mercedes-platz/82', 'uci.html')
   return parseUci(html)
 }

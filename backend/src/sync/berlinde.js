@@ -1,5 +1,5 @@
 import { berlinIso } from 'shared'
-import { decodeEntities, getOk } from './util.js'
+import { decodeEntities, getHtml } from './util.js'
 
 export const MIN_ROWS = 20
 const MARKER = /\((OmU|OV|OmeU)\)/i
@@ -36,6 +36,6 @@ export function parseBerlinde(html) {
 }
 
 export async function fetchShows(ctx) {
-  const html = await (await getOk(ctx, 'https://www.berlin.de/kino/_bin/kinodetail.php/34187/', { headers: { accept: 'text/html' } })).text()
+  const html = await getHtml(ctx, 'https://www.berlin.de/kino/_bin/kinodetail.php/34187/', 'berlinde-alhambra.html')
   return parseBerlinde(html)
 }

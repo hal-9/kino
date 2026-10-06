@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, it, expect, beforeEach } from 'vitest'
@@ -12,6 +13,7 @@ import * as uci from '../src/sync/uci.js'
 import * as berlinde from '../src/sync/berlinde.js'
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures')
+const fixtures = dir
 const read = (f) => fs.readFileSync(path.join(dir, f), 'utf8')
 const reply = (body) => ({ status: 200, json: async () => JSON.parse(body), text: async () => body })
 
@@ -71,6 +73,20 @@ describe('Adapter', () => {
     const rows = berlinde.parseBerlinde(read('berlinde-alhambra.html'))
     expect(rows[0]).toMatchObject({ title: 'Always Lalisa', version: 'OmU', startsAt: '2026-10-12T20:00:00+02:00' })
     expect(rows.some((r) => r.version === 'DF')).toBe(true)
+  })
+})
+
+describe('Inbox (Mac-Upload)', () => {
+  const ctx = (inboxDir, fetch) => ({ fetch, inboxDir, log() {}, cinemas: new Map(), today: '2026-10-06' })
+  const dead = async () => ({ status: 403 })
+
+  it('frische Datei hat Vorrang vor dem Live-Abruf, veraltete nicht', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inbox-'))
+    fs.copyFileSync(path.join(fixtures, 'uci.html'), path.join(dir, 'uci.html'))
+    expect((await uci.fetchShows(ctx(dir, dead))).length).toBeGreaterThan(0)
+    const old = new Date(Date.now() - 40 * 3600_000)
+    fs.utimesSync(path.join(dir, 'uci.html'), old, old)
+    await expect(uci.fetchShows(ctx(dir, dead))).rejects.toThrow('HTTP 403')
   })
 })
 

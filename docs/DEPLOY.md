@@ -118,6 +118,26 @@ Zeile: `25 3 * * * /opt/kino/deploy/backup.sh >> /opt/kino/backup.log 2>&1`
 /opt/kino/deploy/backup.sh && ls /opt/kino/backups
 ```
 
+## 12. UCI und berlin.de vom Mac (Pflicht, beide blocken den VPS mit 403)
+
+`tools/inbox-sync.sh` holt beide Seiten lokal, prüft sie, legt sie in
+`/opt/kino/data/inbox` ab und stößt den Sync im Container an. Der Sync nimmt
+Inbox-Dateien unter 36 h vor dem Live-Abruf. Einmal von Hand testen (**[Local]**):
+
+```bash
+~/kino/tools/inbox-sync.sh
+```
+
+Erwartet im Ende des Logs: `uci: ok …`, `berlinde: ok …`. Dann täglich 07:40 per launchd (**[Local]**):
+
+```bash
+cp ~/kino/tools/com.tuncay.kino-inbox.plist ~/Library/LaunchAgents/ && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tuncay.kino-inbox.plist
+```
+
+Log: `~/Library/Logs/kino-inbox.log`. Ist der Mac mehrere Tage aus, fallen UCI und
+Alhambra nach 36 h auf den Live-Abruf (403) zurück; Zeiten kommen dann weiter von kinoheld,
+nur Fassung/Saal fehlen, und die Einstellungen zeigen „veraltet“.
+
 ## Später: Update ausrollen
 
 ```bash
