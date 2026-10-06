@@ -62,23 +62,21 @@ describe('K14 Programm-Filter', () => {
 
   it('AC02: abgelaufener Tag fällt auf den nächsten zurück, übrige Filter bleiben', async () => {
     stub()
-    const { el } = await render('/?tag=2020-01-01&ov=1&ab=19:00')
+    const { el } = await render('/?tag=2020-01-01&ov=1')
     await waitFor(() => el.textContent.includes('Der gewählte Tag ist vorbei'))
     expect(el.querySelector('.chip.active').textContent).not.toBe('OV/OmU')
     expect(chip(el, 'OV/OmU').getAttribute('aria-pressed')).toBe('true')
-    expect(el.querySelector('[aria-label="Beginn ab"]').value).toBe('19:00')
   })
 
-  it('AC04: unbekannte Fassung/Laufzeit erfüllen harte Filter nicht, stehen getrennt als unsicher', async () => {
+  it('AC04: unbekannte Fassung erfüllt den OV-Filter nicht, steht getrennt als unsicher', async () => {
     stub()
-    const { el } = await render('/?tag=2099-10-13&ov=1&bis=23:00')
+    const { el } = await render('/?tag=2099-10-13&ov=1')
     await waitFor(() => el.textContent.includes('Ohne Angaben'))
-    // 18:00 + 120 = 20:00 passt; 22:30 → 00:30 zu spät; DF raus; Film ohne Laufzeit/Fassung nur unsicher.
-    expect(rows(el)).toEqual(['Vorschlagen: Delphi LUX 18:00', 'Vorschlagen: Delphi LUX 19:00'])
+    // DF raus; Film ohne Fassung nur unsicher.
+    expect(rows(el)).toEqual(['Vorschlagen: Delphi LUX 18:00', 'Vorschlagen: Delphi LUX 22:30', 'Vorschlagen: Delphi LUX 19:00'])
     const unsure = el.querySelector('.unsure')
     expect(unsure.textContent).toContain('Unsicher')
     expect(unsure.closest('.group').textContent).toContain('Ohne Angaben')
-    expect(el.textContent).toContain('Ende ca. 20:00')
   })
 
   it('AC05: Filter verwerfen die Auswahl nicht', async () => {
@@ -92,8 +90,8 @@ describe('K14 Programm-Filter', () => {
   })
 
   it('persönliche Standards je Konto; ausdrückliche URL gewinnt', async () => {
-    localStorage.setItem('kino.programPrefs.v1.1', JSON.stringify({ v: 1, ov: true, fav: false, ab: '', bis: '' }))
-    localStorage.setItem('kino.programPrefs.v1.2', JSON.stringify({ v: 1, ov: false, fav: true, ab: '', bis: '' }))
+    localStorage.setItem('kino.programPrefs.v1.1', JSON.stringify({ v: 1, ov: true, fav: false }))
+    localStorage.setItem('kino.programPrefs.v1.2', JSON.stringify({ v: 1, ov: false, fav: true }))
     stub()
     let r = await render('/')
     await waitFor(() => loc().includes('ov=1'))

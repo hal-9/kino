@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AD_MINUTES, addDays, berlinYmd, concierge, estimatedEnd, isHm, isValidYmd, timeFit, versionFit } from 'shared'
+import { AD_MINUTES, addDays, berlinYmd, concierge, estimatedEnd, isValidYmd, versionFit } from 'shared'
 import { api, errorText, newKey } from '../api.js'
 import { QueryError } from '../components/QueryStatus.jsx'
 import { cachedGet } from '../lib/offline.js'
@@ -21,16 +21,16 @@ const finish = (iso, runtime) => runtime ? `Ende ca. ${endHm(iso, runtime)} (ink
 
 // K14: Filter stehen in der URL (teilbar, Zurück/Vor); persönliche Standards versioniert je Konto im Gerät.
 // Ausdrückliche URL-Parameter gehen vor. Keine privaten Daten in der URL.
-const PREF_KEYS = ['ov', 'fav', 'ab', 'bis']
+const PREF_KEYS = ['ov', 'fav']
 const prefsKey = (uid) => `kino.programPrefs.v1.${uid}`
 function readPrefs(uid) {
   try {
     const p = JSON.parse(localStorage.getItem(prefsKey(uid)))
-    return p?.v === 1 ? { ov: p.ov === true, fav: p.fav === true, ab: isHm(p.ab) ? p.ab : '', bis: isHm(p.bis) ? p.bis : '' } : null
+    return p?.v === 1 ? { ov: p.ov === true, fav: p.fav === true } : null
   } catch { return null }
 }
 function writePrefs(uid, f) {
-  try { localStorage.setItem(prefsKey(uid), JSON.stringify({ v: 1, ov: f.ov, fav: f.fav, ab: f.ab, bis: f.bis })) } catch {}
+  try { localStorage.setItem(prefsKey(uid), JSON.stringify({ v: 1, ov: f.ov, fav: f.fav })) } catch {}
 }
 
 // K13: Auswahl (ein Film, bis zu fünf Vorstellungen, eine Notiz) überlebt Tag-/Filterwechsel und Navigation im Tab.
@@ -42,14 +42,14 @@ export function saveDraft(d) {
   try { d ? sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d)) : sessionStorage.removeItem(DRAFT_KEY) } catch {}
 }
 
-function Row({ s, showDate, onPropose, selected, runtime, showEnd }) {
+function Row({ s, showDate, onPropose, selected }) {
   return (
     <div className="slot">
       <div className="slot-top">
         <span className="show-time">{showDate && <small>{dateShort(s.starts_at)}</small>}{time(s.starts_at)}</span>
         <span className="show-main">
           <strong>{s.cinema_name}</strong>
-          <small>{[s.auditorium, s.seats && `${s.seats} Pl.`, ...s.attrs, showEnd && (runtime ? `Ende ca. ${endHm(s.starts_at, runtime)}` : 'Ende unbekannt')].filter(Boolean).join(' · ')}</small>
+          <small>{[s.auditorium, s.seats && `${s.seats} Pl.`, ...s.attrs].filter(Boolean).join(' · ')}</small>
         </span>
         {s.version && <span className={`badge ${s.version === 'DF' ? '' : 'ov'}`}>{s.version}</span>}
       </div>
@@ -61,11 +61,11 @@ function Row({ s, showDate, onPropose, selected, runtime, showEnd }) {
   )
 }
 
-function MovieCard({ movie, favOnly, showDate, onPropose, onInfo, selected, showEnd }) {
+function MovieCard({ movie, favOnly, showDate, onPropose, onInfo, selected }) {
   const fav = movie.screenings.filter((s) => s.is_favorite)
   const rest = favOnly ? [] : movie.screenings.filter((s) => !s.is_favorite)
   const [open, setOpen] = useState(fav.length === 0)
-  const row = (s) => <Row key={s.id} s={s} showDate={showDate} runtime={movie.runtime} showEnd={showEnd} selected={selected.has(s.id)} onPropose={() => onPropose(movie, s)} />
+  const row = (s) => <Row key={s.id} s={s} showDate={showDate} selected={selected.has(s.id)} onPropose={() => onPropose(movie, s)} />
   const unsure = movie.uncertain.filter((s) => !favOnly || s.is_favorite)
   return (
     <section className="group">
@@ -78,7 +78,7 @@ function MovieCard({ movie, favOnly, showDate, onPropose, onInfo, selected, show
           </button>
         )}
         {open && rest.map(row)}
-        {unsure.length > 0 && <p className="unsure">Unsicher, ob passend (Fassung oder Laufzeit unbekannt):</p>}
+        {unsure.length > 0 && <p className="unsure">Unsicher, ob passend (Fassung unbekannt):</p>}
         {unsure.map(row)}
       </div>
     </section>
@@ -124,8 +124,6 @@ export default function Programm() {
     q: (sp.get('q') ?? '').trim().slice(0, 100),
     ov: sp.get('ov') === '1',
     fav: sp.get('fav') === '1',
-    ab: isHm(sp.get('ab')) ? sp.get('ab') : '',
-    bis: isHm(sp.get('bis')) ? sp.get('bis') : '',
   }
   // retryOnMount: false – offline (Guard zeigt das Programm ohne /me) kein Neu-Laden-Kreislauf beim Einhängen.
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: () => api.get('/me'), retryOnMount: false })
@@ -136,7 +134,7 @@ export default function Programm() {
     for (const [k, v] of Object.entries(changes)) v ? next.set(k, v === true ? '1' : v) : next.delete(k)
     setSp(next, { replace })
     if (save && me && PREF_KEYS.some((k) => k in changes)) {
-      writePrefs(me.id, { ov: next.get('ov') === '1', fav: next.get('fav') === '1', ab: next.get('ab') ?? '', bis: next.get('bis') ?? '' })
+      writePrefs(me.id, { ov: next.get('ov') === '1', fav: next.get('fav') === '1' })
     }
   }
   const ov = f.ov
@@ -213,15 +211,11 @@ export default function Programm() {
     enabled: searching || Boolean(activeDay),
     refetchInterval: 60_000,
   })
-  // Harte Filter clientseitig: unbekannte Fassung/Laufzeit erfüllt sie nie, erscheint aber getrennt als „unsicher“.
-  const fit = (m, s) => {
-    const r = [versionFit(s.version, ov), timeFit(s.starts_at, m.runtime, { earliest: f.ab || undefined, latestEnd: f.bis || undefined })]
-    return r.includes('out') ? 'out' : r.includes('unknown') ? 'unknown' : 'fit'
-  }
+  // OV-Filter clientseitig: unbekannte Fassung erfüllt ihn nie, erscheint aber getrennt als „unsicher“.
   const movies = (program.data?.movies ?? [])
-    .map((m) => ({ ...m, screenings: m.screenings.filter((s) => fit(m, s) === 'fit'), uncertain: m.screenings.filter((s) => fit(m, s) === 'unknown') }))
+    .map((m) => ({ ...m, screenings: m.screenings.filter((s) => versionFit(s.version, ov) === 'fit'), uncertain: m.screenings.filter((s) => versionFit(s.version, ov) === 'unknown') }))
     .filter((m) => [...m.screenings, ...m.uncertain].some((s) => !favOnly || s.is_favorite))
-  const filtered = ov || favOnly || f.ab || f.bis || searching
+  const filtered = ov || favOnly || searching
 
   const stale = (sources.data?.sources ?? []).filter((s) => !s.last_ok_at || Date.now() - new Date(s.last_ok_at) > 36 * 3600_000)
 
@@ -244,19 +238,14 @@ export default function Programm() {
       <div className="chips-row">
         <button className={`chip${ov ? ' active' : ''}`} aria-pressed={ov} onClick={() => update({ ov: !ov })}>OV/OmU</button>
         <button className={`chip${favOnly ? ' active' : ''}`} aria-pressed={favOnly} onClick={() => update({ fav: !favOnly })}>Nur Favoriten</button>
+        {filtered && <button className="link-btn" onClick={() => { setQ(''); update({ q: '', ov: false, fav: false }) }}>Filter zurücksetzen</button>}
       </div>
-      <div className="time-filters">
-        <label>Beginn ab <input type="time" aria-label="Beginn ab" value={f.ab} onChange={(e) => update({ ab: isHm(e.target.value) ? e.target.value : '' }, true)} /></label>
-        <label>Ende bis <input type="time" aria-label="Ende spätestens" value={f.bis} onChange={(e) => update({ bis: isHm(e.target.value) ? e.target.value : '' }, true)} /></label>
-        {filtered && <button className="link-btn" onClick={() => { setQ(''); update({ q: '', ov: false, fav: false, ab: '', bis: '' }) }}>Filter zurücksetzen</button>}
-      </div>
-      {f.bis && <p className="sub">Ende = Beginn + Laufzeit + ca. {AD_MINUTES} Min. Werbung (geschätzt).</p>}
       {program.isLoading && <p className="muted">Lädt…</p>}
       <QueryError query={days.data ? program : days} label="Programm" />
       {program.data && movies.length === 0 && (
         <div className="empty"><h2>Nichts gefunden</h2><p>Programm reicht etwa zwei Wochen voraus.</p></div>
       )}
-      {movies.map((m) => <MovieCard key={m.id} movie={m} favOnly={favOnly} showDate={searching} showEnd={Boolean(f.bis)} selected={selected} onPropose={toggle} onInfo={setInfo} />)}
+      {movies.map((m) => <MovieCard key={m.id} movie={m} favOnly={favOnly} showDate={searching} selected={selected} onPropose={toggle} onInfo={setInfo} />)}
       {hint && <p className="stale" role="status">{hint}</p>}
       {draft && (
         <div className="tray" role="region" aria-label="Auswahl für den Vorschlag">

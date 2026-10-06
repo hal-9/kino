@@ -5,7 +5,7 @@ const BS = String.fromCharCode(0x5c) // Backslash, ohne Escape-Sequenz im Quellt
 
 describe('K16-AC03 Rücksprungziel', () => {
   it('erlaubt interne Routen', () => {
-    for (const ok of ['/', '/vorschlaege', '/vorschlaege/42', '/besuche/7', '/einstellungen', '/wrapped', '/?tag=2099-10-13&ab=18:00']) expect(safeReturnTo(ok)).toBe(ok)
+    for (const ok of ['/', '/vorschlaege', '/vorschlaege/42', '/besuche/7', '/einstellungen', '/wrapped', '/?tag=2099-10-13&ov=1']) expect(safeReturnTo(ok)).toBe(ok)
   })
 
   it('verwirft externe, protokoll-relative, Backslash-, Steuerzeichen-, Kodier- und Login-Ziele', () => {
