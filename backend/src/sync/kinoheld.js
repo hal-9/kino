@@ -14,14 +14,15 @@ async function gql(ctx, query) {
   return json.data
 }
 
+// complete = alle Seiten geholt (nicht an der Seitengrenze abgeschnitten).
 async function paged(ctx, build) {
-  const out = []
+  const items = []
   for (let page = 1; page < 30; page++) {
     const { paginatorInfo, data } = Object.values(await gql(ctx, build(page)))[0]
-    out.push(...data)
-    if (!paginatorInfo.hasMorePages) break
+    items.push(...data)
+    if (!paginatorInfo.hasMorePages) return { items, complete: true }
   }
-  return out
+  return { items, complete: false }
 }
 
 function chainOf(name) {
@@ -30,7 +31,7 @@ function chainOf(name) {
 }
 
 export async function fetchCinemas(ctx) {
-  const list = await paged(ctx, (page) => `{ cinemas(proximity:{city:"Berlin", distance:25}, first:100, page:${page}) {
+  const { items: list } = await paged(ctx, (page) => `{ cinemas(proximity:{city:"Berlin", distance:25}, first:100, page:${page}) {
     paginatorInfo { hasMorePages }
     data { id name urlSlug street postcode { postcode } city { name } latitude longitude } } }`)
   return list.map((c) => ({
@@ -58,12 +59,14 @@ function versionFromFlags(flags, hasSubtitle) {
 export async function fetchShows(ctx) {
   const byId = new Map([...ctx.cinemas.values()].filter((c) => c.kinoheld_id).map((c) => [String(c.kinoheld_id), c]))
   const rows = []
+  let complete = true
   for (let i = 0; i < DAYS; i++) {
     const date = addDays(ctx.today, i)
-    const shows = await paged(ctx, (page) => `{ programShows(cinemaProximity:{city:"Berlin", distance:25}, dates:["${date}"], first:100, page:${page}) {
+    const { items: shows, complete: dayComplete } = await paged(ctx, (page) => `{ programShows(cinemaProximity:{city:"Berlin", distance:25}, dates:["${date}"], first:100, page:${page}) {
       paginatorInfo { hasMorePages }
       data { id beginning isBookable auditorium { name seatCount } audioLanguage { name } subtitleLanguage { name }
              flags { category name } cinema { id name } movie { id title productionYear duration } } } }`)
+    complete &&= dayComplete
     for (const s of shows) {
       const cin = byId.get(String(s.cinema.id))
       const version =
@@ -85,5 +88,7 @@ export async function fetchShows(ctx) {
       })
     }
   }
-  return rows
+  // Vollständig nur für die angefragten Tage und Kinos mit bekannter kinoheld-ID, und nur ohne abgeschnittene Seiten.
+  const coverage = complete ? { cinemas: [...byId.values()].map((c) => c.key), from: ctx.today, to: addDays(ctx.today, DAYS - 1) } : null
+  return { rows, coverage }
 }

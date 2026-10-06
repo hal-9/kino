@@ -15,7 +15,7 @@ export async function fetchShows(ctx) {
   const auds = new Map((await fetchAuditoriums(ctx)).map((a) => [a.id, a.name]))
   const prog = await (await getOk(ctx, `${BASE}/program`, { headers: HEADERS })).json()
   const movies = new Map(prog.movies.map((m) => [m.id, m]))
-  return prog.performances.map((p) => {
+  const rows = prog.performances.map((p) => {
     const mv = movies.get(p.movieId)
     const lang = /Sprache:\s*([^,]+)(?:,\s*Untertitel:\s*(.+))?/.exec(p.language ?? '')
     return {
@@ -33,4 +33,7 @@ export async function fetchShows(ctx) {
       runtime: mv?.minutes ?? null,
     }
   })
+  // Das Programm-JSON listet alle kommenden Vorstellungen des Hauses: vollständig ab heute bis zum letzten gelisteten Tag.
+  const days = rows.map((r) => r.startsAt?.slice(0, 10)).filter(Boolean).sort()
+  return { rows, coverage: days.length ? { cinemas: ['zoo-palast'], from: ctx.today, to: days.at(-1) } : null }
 }

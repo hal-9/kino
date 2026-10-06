@@ -15,7 +15,7 @@ export function programRouter(db) {
     const now = Date.now()
     const first = date ?? from
     const last = date ?? to ?? addDays(first ?? berlinYmd(new Date(now)), 13)
-    const where = ['datetime(s.starts_at) < datetime(?)']
+    const where = ['s.withdrawn_at IS NULL', 'datetime(s.starts_at) < datetime(?)']
     const args = [berlinIso(addDays(last, 1), '00:00')]
     // Nur kommende Vorstellungen, auch bei explizitem Datum (vergangene sind nicht mehr wählbar).
     where.push('datetime(s.starts_at) >= datetime(?)')
@@ -67,7 +67,7 @@ export function programRouter(db) {
 
   router.get('/program/days', (req, res) => {
     const days = db
-      .prepare(`SELECT DISTINCT substr(starts_at, 1, 10) AS d FROM screenings WHERE datetime(starts_at) >= datetime(?) ORDER BY d`)
+      .prepare(`SELECT DISTINCT substr(starts_at, 1, 10) AS d FROM screenings WHERE withdrawn_at IS NULL AND datetime(starts_at) >= datetime(?) ORDER BY d`)
       .all(new Date().toISOString())
       .map((r) => r.d)
     res.json({ days })
@@ -83,7 +83,8 @@ export function programRouter(db) {
   })
 
   router.get('/sources', (req, res) => {
-    res.json({ sources: db.prepare('SELECT source, last_ok_at, last_count, last_error, last_error_at FROM source_health ORDER BY source').all() })
+    res.json({ sources: db.prepare(`SELECT source, last_ok_at, last_count, last_error, last_error_at, last_attempt_at, last_captured_at, last_complete_import_at
+       FROM source_health ORDER BY source`).all() })
   })
 
   return router

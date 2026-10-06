@@ -40,7 +40,9 @@ describe('Adapter', () => {
 
   it('kinoheld: Platzhalter-Saal → null, Kino per kinoheld_id', async () => {
     const ctx = ctxWith(db, { programShows: 'kinoheld-shows.json' })
-    const rows = await kinoheld.fetchShows(ctx)
+    const { rows, coverage } = await kinoheld.fetchShows(ctx)
+    expect(coverage).toMatchObject({ from: '2026-10-06', to: '2026-10-19' })
+    expect(coverage.cinemas).toContain('zoo-palast')
     const zoo = rows.find((r) => r.cinemaKey === 'zoo-palast')
     expect(zoo.auditorium).toBeNull()
     expect(zoo.startsAt).toMatch(/\+02:00$/)
@@ -55,7 +57,8 @@ describe('Adapter', () => {
   })
 
   it('zoopalast: Version und Saal', async () => {
-    const rows = await zoopalast.fetchShows(ctxWith(db, { '/config': 'zoopalast-config.json', '/program': 'zoopalast-program.json' }))
+    const { rows, coverage } = await zoopalast.fetchShows(ctxWith(db, { '/config': 'zoopalast-config.json', '/program': 'zoopalast-program.json' }))
+    expect(coverage).toMatchObject({ cinemas: ['zoo-palast'], from: '2026-10-06' })
     expect(rows.length).toBeGreaterThan(5)
     expect(rows.every((r) => r.cinemaKey === 'zoo-palast' && typeof r.auditorium === 'string')).toBe(true)
     expect(new Set(rows.map((r) => r.version))).toContain('DF')
@@ -105,7 +108,7 @@ describe('Merge + Programm', () => {
     })
 
   it('Overlay ergänzt Version und Saal der kinoheld-Zeile (eine Vorstellung)', async () => {
-    const khRows = await kinoheld.fetchShows(ctxWith(db, {}).fetch ? { ...ctxWith(db, { programShows: 'kinoheld-shows.json' }) } : null)
+    const { rows: khRows } = await kinoheld.fetchShows(ctxWith(db, { programShows: 'kinoheld-shows.json' }))
     expect(khRows.length).toBeGreaterThan(0)
     // Zoo-Palast-Overlay mit exakt der Zeit einer kinoheld-Zeile
     const kh = khRows.find((r) => r.cinemaKey === 'zoo-palast')
@@ -116,13 +119,13 @@ describe('Merge + Programm', () => {
     expect(rows[0]).toMatchObject({ version: 'OV', auditorium: 'Kino 1', ticket_url: 'https://x' })
   })
 
-  it('Overlay mit anderem Titel ersetzt die kinoheld-Dublette am selben Tag', async () => {
+  it('Overlay mit anderem Titel löscht die kinoheld-Zeile nicht mehr (K04: keine Quelle löscht eine andere)', async () => {
     const base = { cinemaKey: 'uci-mercedes-platz', cinemaName: 'UCI', startsAt: '2099-01-05T20:00:00+01:00', year: null, version: null, auditorium: null, attrs: [], ticketUrl: null, sourceId: null, runtime: null }
     const kh = { fetchShows: async () => [{ ...base, title: 'Die vergessene Insel', source: 'kinoheld' }] }
     const ov = { fetchShows: async () => [{ ...base, title: 'Forgotten Island', version: 'OV', source: 'uci' }] }
     await sync({ kinoheld: kh, uci: ov })
-    const rows = db.prepare("SELECT version, source FROM screenings WHERE cinema_key = 'uci-mercedes-platz'").all()
-    expect(rows).toEqual([{ version: 'OV', source: 'uci' }])
+    const rows = db.prepare("SELECT version, source FROM screenings WHERE cinema_key = 'uci-mercedes-platz' ORDER BY id").all()
+    expect(rows).toEqual([{ version: null, source: 'kinoheld' }, { version: 'OV', source: 'uci' }])
   })
 
   it('Quelle mit Fehler lässt Daten stehen und setzt source_health', async () => {

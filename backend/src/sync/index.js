@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -109,7 +110,7 @@ function mergeRows(db, rows) {
   )
   const updShow = db.prepare(
     `UPDATE screenings SET version = @version, auditorium = @auditorium, attrs_json = @attrs, ticket_url = @ticketUrl,
-       last_seen_at = datetime('now') WHERE id = @id`
+       last_seen_at = datetime('now'), withdrawn_at = NULL WHERE id = @id`
   )
   const observe = db.prepare(
     `INSERT INTO screening_observations (screening_id, source, source_key, cinema_key, title, year, starts_at, version, auditorium, attrs_json, ticket_url, runtime)
@@ -117,10 +118,11 @@ function mergeRows(db, rows) {
      ON CONFLICT (source, source_key) DO UPDATE SET screening_id = excluded.screening_id, cinema_key = excluded.cinema_key,
        title = excluded.title, year = excluded.year, starts_at = excluded.starts_at, version = excluded.version,
        auditorium = excluded.auditorium, attrs_json = excluded.attrs_json, ticket_url = excluded.ticket_url,
-       runtime = excluded.runtime, last_seen_at = datetime('now')`
+       runtime = excluded.runtime, last_seen_at = datetime('now'), missing_count = 0, missing_since = NULL, withdrawn_at = NULL
+     RETURNING id`
   )
   const movieCache = new Map()
-  const overlayDays = new Map() // 'cinema|day' → Set belegter Screening-IDs
+  const seen = new Set() // IDs der in diesem Lauf beobachteten screening_observations
 
   function movieId(row) {
     const norm = normTitle(row.title)
@@ -141,12 +143,6 @@ function mergeRows(db, rows) {
       if (!hasCinema.get(row.cinemaKey)) insCinema.run(row.cinemaKey, row.cinemaName)
       const id = movieId(row)
       const key = sourceKey(row)
-      const claim = (sid) => {
-        if (row.source === 'kinoheld') return
-        const k = `${row.cinemaKey}|${row.startsAt.slice(0, 10)}`
-        if (!overlayDays.has(k)) overlayDays.set(k, new Set())
-        overlayDays.get(k).add(sid)
-      }
       const attrs = JSON.stringify(row.attrs)
       let old = observed.get(row.source, key, id, row.cinemaKey, row.startsAt)
       if (!old) {
@@ -155,8 +151,7 @@ function mergeRows(db, rows) {
         old = sid && byId.get(sid)
       }
       const screeningId = old ? old.id : Number(insShow.run({ ...row, movieId: id, attrs }).lastInsertRowid)
-      observe.run({ ...row, screeningId, key, attrs })
-      claim(screeningId)
+      seen.add(observe.get({ ...row, screeningId, key, attrs }).id)
       if (!old) continue
       const base = row.source === 'kinoheld' // Basis überschreibt nie Overlay-Werte
       const pick = (o, n) => (base ? (o ?? n) : (n ?? o))
@@ -165,30 +160,66 @@ function mergeRows(db, rows) {
         attrs: JSON.stringify([...new Set([...JSON.parse(old.attrs_json), ...row.attrs])]), ticketUrl: pick(old.ticket_url, row.ticketUrl),
       })
     }
-    // Overlay kennt den Tag vollständig: kinoheld-Zeilen ohne Partner sind Titel-Dubletten (z. B. dt./engl. Titel).
-    const stale = db.prepare(
-      `SELECT id FROM screenings WHERE source = 'kinoheld' AND cinema_key = ? AND substr(starts_at, 1, 10) = ?`
+  })()
+  return seen
+}
+
+// Mindestabstand zwischen erster und bestätigender Abwesenheit (Sync läuft alle 12 h, Mac-Inbox öfter).
+const WITHDRAW_AFTER_HOURS = 6
+
+// Nur bei vollständig gemeldetem Scope (Kinos × Tage) und neuem Capture-Inhalt: nicht gesehene Beobachtungen
+// dieser Quelle zählen als abwesend; zwei verschiedene Captures mit Abstand ziehen sie zurück (weich, nichts gelöscht).
+// Eine Vorstellung gilt erst als zurückgezogen, wenn keine Quelle sie mehr aktiv beobachtet.
+function retireMissing(db, source, coverage, seen, now) {
+  const scoped = db
+    .prepare(
+      `SELECT id, screening_id FROM screening_observations WHERE source = ? AND withdrawn_at IS NULL
+         AND cinema_key IN (SELECT value FROM json_each(?)) AND substr(starts_at, 1, 10) BETWEEN ? AND ?
+         AND datetime(starts_at) > datetime(?)`
     )
-    const unlink = db.prepare('UPDATE proposal_options SET screening_id = NULL WHERE screening_id = ?')
-    const del = db.prepare('DELETE FROM screenings WHERE id = ?')
-    for (const [k, keep] of overlayDays) {
-      const [cinema, day] = k.split('|')
-      for (const { id } of stale.all(cinema, day)) {
-        if (keep.has(id)) continue
-        unlink.run(id)
-        del.run(id)
-      }
-    }
+    .all(source, JSON.stringify(coverage.cinemas), coverage.from, coverage.to, now)
+  const miss = db.prepare('UPDATE screening_observations SET missing_count = missing_count + 1, missing_since = COALESCE(missing_since, ?) WHERE id = ?')
+  const withdraw = db.prepare(
+    `UPDATE screening_observations SET withdrawn_at = ? WHERE id = ? AND missing_count >= 2
+       AND datetime(missing_since) <= datetime(?, '-${WITHDRAW_AFTER_HOURS} hours')`
+  )
+  const retire = db.prepare(
+    `UPDATE screenings SET withdrawn_at = ? WHERE id = ? AND withdrawn_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM screening_observations WHERE screening_id = ? AND withdrawn_at IS NULL)`
+  )
+  for (const o of scoped) {
+    if (seen.has(o.id)) continue
+    miss.run(now, o.id)
+    if (withdraw.run(now, o.id, now).changes) retire.run(now, o.screening_id, o.screening_id)
+  }
+}
+
+// Ein Quell-Import ist eine Transaktion: Daten, Rückzüge und Erfolgszeitpunkte gemeinsam oder gar nicht.
+// last_ok_at = letzter erfolgreicher (auch teilweiser) Import; last_complete_import_at nur mit vollständigem Scope.
+function importSource(db, source, rows, coverage, now) {
+  const digest = crypto.createHash('sha256').update(JSON.stringify(rows)).digest('hex')
+  db.transaction(() => {
+    const seen = mergeRows(db, rows)
+    const prev = db.prepare('SELECT last_digest FROM source_health WHERE source = ?').get(source)
+    // Derselbe Inhalt erneut (z. B. Cache-Replay) ist keine neue Abwesenheitsbeobachtung.
+    const fresh = coverage && prev?.last_digest !== digest
+    if (fresh) retireMissing(db, source, coverage, seen, now)
+    db.prepare(
+      `INSERT INTO source_health (source, last_ok_at, last_count, last_error, last_attempt_at, last_captured_at, last_complete_import_at, last_digest)
+       VALUES (@source, @now, @count, NULL, @now, @now, @complete, @digest)
+       ON CONFLICT (source) DO UPDATE SET last_ok_at = @now, last_count = @count, last_error = NULL, last_attempt_at = @now,
+         last_captured_at = @now, last_complete_import_at = COALESCE(@complete, last_complete_import_at),
+         last_digest = COALESCE(@digest, last_digest)`
+    ).run({ source, now, count: rows.length, complete: coverage ? now : null, digest: fresh ? digest : null })
   })()
 }
 
-function setHealth(db, source, err, count) {
+// Fehlversuch nach Rollback separat festhalten; Erfolgszeitpunkte bleiben unverändert.
+function recordFailure(db, source, message, now) {
   db.prepare(
-    `INSERT INTO source_health (source, last_ok_at, last_error, last_error_at, last_count) VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT (source) DO UPDATE SET last_ok_at = COALESCE(excluded.last_ok_at, last_ok_at),
-       last_error = excluded.last_error, last_error_at = COALESCE(excluded.last_error_at, last_error_at),
-       last_count = COALESCE(excluded.last_count, last_count)`
-  ).run(source, err ? null : new Date().toISOString(), err ? String(err) : null, err ? new Date().toISOString() : null, err ? null : count)
+    `INSERT INTO source_health (source, last_error, last_error_at, last_attempt_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT (source) DO UPDATE SET last_error = excluded.last_error, last_error_at = excluded.last_error_at, last_attempt_at = excluded.last_attempt_at`
+  ).run(source, message, now, now)
 }
 
 export async function runSync(db, { fetch = createFetch(), log = console.log, adapters = ADAPTERS, today, minRows = (m) => m.MIN_ROWS } = {}) {
@@ -229,40 +260,32 @@ export async function runSync(db, { fetch = createFetch(), log = console.log, ad
       }
     }
 
-    const rows = []
+    let total = 0
     const ok = []
-    // Basis zuerst, Overlays danach (Reihenfolge der Keys in ADAPTERS).
+    // Basis zuerst, Overlays danach (Reihenfolge der Keys in ADAPTERS); jede Quelle für sich atomar.
     for (const [name, mod] of Object.entries(adapters)) {
+      const now = new Date().toISOString()
       try {
-        const fetched = await mod.fetchShows(ctx)
+        // Adapter liefern Zeilen oder { rows, coverage }; coverage = vollständig gemeldeter Scope { cinemas, from, to }.
+        const res = await mod.fetchShows(ctx)
+        const { rows: fetched, coverage = null } = Array.isArray(res) ? { rows: res } : res
         // Unaufgelöste Ortszeiten (DST-Lücke/-Doppelstunde, ungültige Daten) nicht raten, sondern verwerfen.
         const r = fetched.filter((x) => x.startsAt)
         if (r.length < fetched.length) log(`${name}: ${fetched.length - r.length} Vorstellungen ohne eindeutige Zeit verworfen`)
         if (r.length < minRows(mod)) throw new Error(`nur ${r.length} Vorstellungen (erwartet ≥ ${minRows(mod)})`)
-        rows.push(...r)
+        importSource(db, name, r, r.length < fetched.length ? null : coverage, now)
+        total += r.length
         ok.push(name)
-        setHealth(db, name, null, r.length)
-        log(`${name}: ok ${r.length}`)
+        log(`${name}: ok ${r.length}${coverage ? ' (vollständig)' : ''}`)
       } catch (e) {
-        setHealth(db, name, e.message)
+        recordFailure(db, name, e.message, now)
         log(`${name}: FEHLER ${e.message}`)
       }
     }
 
-    mergeRows(db, rows)
-
-    // Quelle erreichbar und listet die Vorstellung nicht mehr = abgesetzt.
-    if (ok.length) {
-      const marks = ok.map(() => '?').join(',')
-      const gone = `source IN (${marks}) AND last_seen_at < datetime('now', '-36 hours') AND datetime(starts_at) > datetime('now')`
-      db.transaction(() => {
-        db.prepare(`UPDATE proposal_options SET screening_id = NULL WHERE screening_id IN (SELECT id FROM screenings WHERE ${gone})`).run(...ok)
-        db.prepare(`DELETE FROM screenings WHERE ${gone}`).run(...ok)
-      })()
-    }
     await tmdb.enrich(db, { fetch, log }).catch((e) => log(`tmdb: ${e.message}`))
     await letterboxd.syncRatings(db, { fetch, log }).catch((e) => log(`letterboxd: ${e.message}`))
-    return { ok, rows: rows.length }
+    return { ok, rows: total }
   } finally {
     running = false
   }

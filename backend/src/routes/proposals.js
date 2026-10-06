@@ -65,7 +65,7 @@ export function proposalsRouter(db) {
       .prepare(
         `SELECT s.*, c.name AS cinema_name, c.street, c.zip, c.lat, c.lng, m.title, m.year, m.runtime
          FROM screenings s JOIN cinemas c ON c.key = s.cinema_key JOIN movies m ON m.id = s.movie_id
-         WHERE s.movie_id = ? AND s.id IN (${ids.map(() => '?').join(',')}) ORDER BY s.starts_at`
+         WHERE s.movie_id = ? AND s.withdrawn_at IS NULL AND s.id IN (${ids.map(() => '?').join(',')}) ORDER BY s.starts_at`
       )
       .all(movie_id, ...ids)
     if (shows.length !== ids.length) return res.status(422).json({ error: 'validation failed' })
