@@ -118,6 +118,29 @@ Zeile: `25 3 * * * /opt/kino/deploy/backup.sh >> /opt/kino/backup.log 2>&1`
 /opt/kino/deploy/backup.sh && ls /opt/kino/backups
 ```
 
+`backup.sh` schreibt eine eigenständige Datei (kein WAL) und prüft sie mit `deploy/verify-backup.sh`
+(integrity_check, foreign_key_check, schema_migrations). Fehlende DB oder kaputtes Backup → Exit ≠ 0 und
+`FEHLER:` im Log. Einzelnes Backup prüfen (**[VPS]**):
+
+```bash
+/opt/kino/deploy/verify-backup.sh /opt/kino/backups/<datei>.db
+```
+
+Stand und Grenzen (K25, 2026-10-06):
+
+- Datenverlust-Fenster nach Zeitplan: bis ~24 h (nächtlich 03:25) bzw. seit dem letzten `pre-<sha>`-Backup.
+  Nicht gemessen auf dem VPS.
+- Wiederherstellung lokal geprobt (Kopie von `backend/data/dev.db`, sanitisiert/Dev-Daten): Backup + Prüfung +
+  Kopie + Migrationen 005–012 + App-Start mit `/api/readyz` 200 in 0,33 s; integrity ok, 0 FK-Verstöße,
+  6989 Vorstellungen, 4 Optionen, 1 Besuch. Restore auf dem VPS: **nicht ausgeführt** (Owner-Freigabe nötig).
+- **Off-Host-Kopie: blockiert.** Kein freigegebenes Ziel, keine Zugangsdaten, kein Schlüssel beim Owner.
+  Bis dahin liegen Backups nur auf demselben VPS (Ausfall des VPS = Verlust). Nötig vom Owner: Ziel
+  (z. B. Storage-Box), Verschlüsselung (z. B. age-Empfängerschlüssel, privater Schlüssel nur beim Owner),
+  Aufbewahrung, dann Upload + Probe-Entschlüsselung.
+- Restore auf dem VPS (nur mit Freigabe; verliert alle Schreibvorgänge seit dem Backup):
+  API stoppen, `data/app.db` (+ `-wal`/`-shm`) beiseite legen, Backup als `data/app.db` kopieren,
+  `chown 1000:1000`, API mit dem Tag aus `deploy/releases/current` starten, `/api/readyz` prüfen.
+
 ## 12. UCI und berlin.de vom Mac (Pflicht, beide blocken den VPS mit 403)
 
 `tools/inbox-sync.sh` holt beide Seiten lokal, prüft sie, legt sie in

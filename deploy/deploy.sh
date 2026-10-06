@@ -24,7 +24,7 @@ mv "$REL/$SHA.tmp" "$REL/$SHA"
 KINO_API_TAG=$SHA compose build kino-api || die "API-Build fehlgeschlagen, nichts geändert"
 
 # 2. Backup vor möglichen Migrationen (laufen beim API-Start).
-"$HERE/backup.sh" "pre-$SHA"
+if [ -f "$DB" ]; then "$HERE/backup.sh" "pre-$SHA" >/dev/null; fi
 
 # 3. API umschalten und prüfen.
 KINO_API_TAG=$SHA compose up -d kino-api

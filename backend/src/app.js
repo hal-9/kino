@@ -29,6 +29,17 @@ export function createApp(db, deps = {}) {
     next()
   })
 
+  // Schreibende Browser-Anfragen nur von der eigenen Origin: Nachbar-Subdomains derselben Site (*.tunikb.com)
+  // bekommen das SameSite=Lax-Cookie mit. Ohne Origin-Header (curl, Kalender-Clients) unverändert.
+  app.use('/api', (req, res, next) => {
+    const origin = req.get('Origin')
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || origin === undefined) return next()
+    let host = null
+    try { host = new URL(origin).host } catch {}
+    if (host !== req.get('host')) return res.status(403).json({ error: 'forbidden origin' })
+    next()
+  })
+
   // Liveness (Prozess antwortet) getrennt von Readiness (DB lesbar). Öffentlich, daher nur ok/nicht ok;
   // Quellen-Frische steht authentifiziert unter /api/sources.
   app.get('/api/healthz', (req, res) => res.json({ ok: true }))
