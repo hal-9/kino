@@ -27,6 +27,26 @@ export function tilesOf(r) {
   ].filter(Boolean)
 }
 
+// K33: Was geteilt wird (Bild und Text) – dieselbe geschwärzte Auswahl wie in der Vorschau.
+// Namen anderer Personen nur nach ausdrücklicher Wahl; Bewertungen ohne Namen.
+export const exportTiles = (tiles, { names = false } = {}) => tiles.filter((t) => names || t.name !== 'Treueste Begleitung')
+
+export function storyLines(st) {
+  if (!st) return []
+  const a = st.agreement
+  return [
+    st.first_confirmed && `Erster bestätigter Kinoabend: ${st.first_confirmed.title} (${day(st.first_confirmed.date)})`,
+    st.favorite_venue && `Lieblingskino: ${st.favorite_venue.name} (${st.favorite_venue.outings} von ${st.favorite_venue.of} Kinoabenden)`,
+    st.revisited_room && `Wieder im selben Saal: ${st.revisited_room.name} (${st.revisited_room.outings}×)`,
+    a && !a.omitted && `Am einigsten: ${a.closest.title} (Abstand ${String(a.closest.spread).replace('.', ',')} Sterne, ${a.closest.raters} Bewertungen)`,
+    a && !a.omitted && `Am uneinigsten: ${a.widest.title} (Abstand ${String(a.widest.spread).replace('.', ',')} Sterne; aus ${a.rated_films} gemeinsam bewerteten Filmen)`,
+    a?.omitted && `Einig/uneinig: ausgelassen, nur ${a.rated_films} gemeinsam bewertete Filme (mindestens ${a.min})`,
+  ].filter(Boolean)
+}
+
+export const shareText = (title, tiles, st) =>
+  [title, ...tiles.map((t) => `${t.name}: ${t.value}${t.sub ? ` (${t.sub})` : ''}`), ...storyLines(st)].join('\n')
+
 // Fehler (kein Canvas, toBlob null, Teilen fehlgeschlagen) → Download-Fallback bzw. Fehlermeldung; Abbruch ist kein Fehler.
 export async function share(r, tiles, title) {
   await document.fonts?.ready
@@ -54,10 +74,18 @@ export default function Wrapped() {
   const [year, setYear] = useState(thisYear)
   const [scope, setScope] = useState('me')
   const [shareError, setShareError] = useState(false)
+  const [names, setNames] = useState(false)
+  const [copied, setCopied] = useState(null) // 'ok' | text (manuell kopieren)
   const query = useQuery({ queryKey: ['wrapped', year, scope], queryFn: () => api.get(`/stats/wrapped?year=${year}&scope=${scope}`) })
   const { data: r, isLoading } = query
   const tiles = r ? tilesOf(r) : []
   const title = scope === 'me' ? `Mein Kinojahr ${year}` : `Unser Kinojahr ${year}`
+  const shared = exportTiles(tiles, { names })
+  const lines = storyLines(r?.story)
+  async function copyText() {
+    const text = shareText(title, shared, r.story)
+    try { await navigator.clipboard.writeText(text); setCopied('ok') } catch { setCopied(text) }
+  }
 
   return (
     <>
@@ -82,8 +110,26 @@ export default function Wrapped() {
               </div>
             ))}
           </div>
+          {lines.length > 0 && (
+            <section className="group">
+              <h2 className="group-title">Geschichte</h2>
+              <ul className="card pad sub" aria-label="Story-Karten">{lines.map((l) => <li key={l}>{l}</li>)}</ul>
+            </section>
+          )}
+          {r.story?.posters.length > 0 && (
+            <div className="poster-mosaic" aria-hidden="true">
+              {r.story.posters.map((src) => <img key={src} src={src} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none' }} />)}
+            </div>
+          )}
+          <p className="sub" aria-label="Vorschau Teilen">Im Bild: {shared.map((t) => t.name).join(', ')}. Gilt nur für künftig geteilte Bilder; schon geteilte lassen sich nicht zurückholen.</p>
+          {tiles.some((t) => t.name === 'Treueste Begleitung') && (
+            <label className="sub"><input type="checkbox" checked={names} onChange={(e) => setNames(e.target.checked)} /> Namen der Begleitung im Bild und Text zeigen</label>
+          )}
           {shareError && <p className="stale" role="alert">Bild konnte nicht erstellt werden. Die Zahlen oben bleiben vollständig sichtbar.</p>}
-          <button className="btn primary" style={{ width: '100%' }} onClick={() => { setShareError(false); share(r, tiles, title).catch(() => setShareError(true)) }}>Als Bild teilen</button>
+          <button className="btn primary" style={{ width: '100%' }} onClick={() => { setShareError(false); share(r, shared, title).catch(() => setShareError(true)) }}>Als Bild teilen</button>
+          <button className="btn" style={{ width: '100%', marginTop: 8 }} onClick={copyText}>Als Text kopieren</button>
+          {copied === 'ok' && <p className="sub" role="status">Text kopiert.</p>}
+          {copied && copied !== 'ok' && <textarea className="field" readOnly aria-label="Text zum Kopieren" value={copied} />}
         </>
       )}
     </>

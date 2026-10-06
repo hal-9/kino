@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { aggregateVisits, berlinYmd } from 'shared'
+import { aggregateVisits, berlinYmd, normRoom } from 'shared'
 import { requireAuth } from '../auth.js'
 import { materializeVisits } from '../autoVisits.js'
 
@@ -12,6 +12,56 @@ function top(values) {
   let best = null
   for (const [name, count] of counts) if (!best || count > best.count) best = { name, count }
   return best
+}
+
+// K33: optionale Story-Karten aus denselben Zeilen wie die Kennzahlen. Nur erfasste Daten, Nenner immer dabei,
+// keine Namen (auch nicht von Bewertenden); zu wenig Daten → null bzw. ausdrücklich ausgelassen.
+export const MIN_RATED_FILMS = 3
+function story(rows, scope) {
+  const eventOf = (v) => v.event_key ?? `visit:${v.id}`
+  const outings = new Set(rows.map(eventOf)).size
+  const first = rows.find((v) => v.attendance === 'confirmed' || v.attendance === 'manual')
+  // Lieblingskino nach Kinoabenden (verschiedene Vorstellungen), nicht nach Personenbesuchen.
+  const byCinema = new Map()
+  const byRoom = new Map()
+  for (const v of rows) {
+    if (v.s.cinema_name) (byCinema.get(v.s.cinema_name) ?? byCinema.set(v.s.cinema_name, new Set()).get(v.s.cinema_name)).add(eventOf(v))
+    const room = v.auditorium && v.s.cinema_key ? `${v.s.cinema_key}|${normRoom(v.auditorium)}` : null
+    if (room) (byRoom.get(room) ?? byRoom.set(room, { name: `${v.s.cinema_name} · ${v.auditorium}`, events: new Set() }).get(room)).events.add(eventOf(v))
+  }
+  const best = (entries) => entries.reduce((a, b) => (!a || b[1] > a[1] ? b : a), null)
+  const venue = best([...byCinema].map(([name, ev]) => [name, ev.size]))
+  const room = best([...byRoom.values()].map((r) => [r.name, r.events.size]))
+  const posters = [...new Map(rows.filter((v) => v.movie_poster && v.movie_id).map((v) => [v.movie_id, v.movie_poster])).values()].slice(0, 9)
+  let agreement = null
+  if (scope === 'group') {
+    // Filme mit ausdrücklichen Bewertungen (eigene vor Letterboxd) von mindestens zwei Personen.
+    const films = new Map()
+    for (const v of rows) {
+      const r = v.manual_rating ?? v.letterboxd_rating
+      if (r == null || !v.movie_id) continue
+      const f = films.get(v.movie_id) ?? films.set(v.movie_id, { title: v.s.title, by: new Map() }).get(v.movie_id)
+      f.by.set(v.user_id, r)
+    }
+    const rated = [...films.values()].filter((f) => f.by.size >= 2).map((f) => {
+      const rs = [...f.by.values()]
+      return { title: f.title, raters: rs.length, spread: Math.max(...rs) - Math.min(...rs) }
+    })
+    agreement = rated.length < MIN_RATED_FILMS
+      ? { omitted: 'too_few_ratings', rated_films: rated.length, min: MIN_RATED_FILMS }
+      : {
+        rated_films: rated.length, min: MIN_RATED_FILMS,
+        closest: rated.reduce((a, b) => (b.spread < a.spread ? b : a)),
+        widest: rated.reduce((a, b) => (b.spread > a.spread ? b : a)),
+      }
+  }
+  return {
+    first_confirmed: first ? { title: first.s.title, date: first.watched_on } : null,
+    favorite_venue: venue ? { name: venue[0], outings: venue[1], of: outings } : null,
+    revisited_room: room && room[1] >= 2 ? { name: room[0], outings: room[1] } : null,
+    posters,
+    agreement,
+  }
 }
 
 export function statsRouter(db) {
@@ -28,7 +78,7 @@ export function statsRouter(db) {
       .prepare(
         // watched_on ist ein Berliner Kalenderdatum → Jahr = Berliner Jahr. Verknüpfte Vorstellung: Screening der
         // gebuchten Option, sonst die Buchung selbst; ohne Buchung ungruppiert.
-        `SELECT v.*, m.runtime AS movie_runtime,
+        `SELECT v.*, m.runtime AS movie_runtime, m.poster_url AS movie_poster,
            CASE WHEN o.screening_id IS NOT NULL THEN 'screening:' || o.screening_id WHEN v.proposal_id IS NOT NULL THEN 'proposal:' || v.proposal_id END AS event_key
          FROM visits v LEFT JOIN movies m ON m.id = v.movie_id
            LEFT JOIN proposals p ON p.id = v.proposal_id LEFT JOIN proposal_options o ON o.id = p.booked_option_id
@@ -59,6 +109,7 @@ export function statsRouter(db) {
       first: first ? { title: first.s.title, date: first.watched_on } : null,
       last: last ? { title: last.s.title, date: last.watched_on } : null,
     }
+    out.story = story(rows, scope)
     res.json(out)
   })
 

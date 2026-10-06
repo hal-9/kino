@@ -68,3 +68,48 @@ describe('K22 Teilen: Fehler erholen sich', () => {
     await waitFor(() => download.mock.calls.length === 1)
   })
 })
+
+describe('K33 Story und geschwärzter Export', () => {
+  const full = {
+    ...stats, top_companion: { name: 'kim', count: 3 }, top_cinema: { name: 'Zoo Palast', count: 4 },
+    story: {
+      first_confirmed: { title: 'Eins', date: '2026-03-01' }, favorite_venue: { name: 'Zoo Palast', outings: 4, of: 5 },
+      revisited_room: null, posters: ['https://image.tmdb.org/1.jpg'], agreement: { omitted: 'too_few_ratings', rated_films: 2, min: 3 },
+    },
+  }
+
+  it('Karten mit Nenner, zu wenige Bewertungen ausdrücklich ausgelassen; Text = Vorschau, ohne Namen bis zur Wahl', async () => {
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify(full)))
+    const writes = []
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: async (t) => { writes.push(t) } } })
+    const { el } = await renderScreen(<Wrapped />)
+    await waitFor(() => el.querySelector('[aria-label="Story-Karten"]'))
+    const story = el.querySelector('[aria-label="Story-Karten"]').textContent
+    expect(story).toContain('Lieblingskino: Zoo Palast (4 von 5 Kinoabenden)')
+    expect(story).toContain('ausgelassen, nur 2 gemeinsam bewertete Filme (mindestens 3)')
+    expect(story).not.toContain('Am einigsten')
+    const preview = el.querySelector('[aria-label="Vorschau Teilen"]').textContent
+    expect(preview).not.toContain('Treueste Begleitung')
+    const copy = () => act(async () => [...el.querySelectorAll('button')].find((b) => b.textContent === 'Als Text kopieren').click())
+    await copy()
+    expect(writes[0].split('\n')[0]).toBe('Mein Kinojahr 2026')
+    expect(writes[0]).not.toContain('kim')
+    expect(writes[0]).toContain('Erster bestätigter Kinoabend: Eins')
+    // Jede Kachel der Vorschau steht im Text, und nur die.
+    for (const name of preview.replace(/^Im Bild: /, '').split('.')[0].split(', ')) expect(writes[0]).toContain(`${name}: `)
+    const box = [...el.querySelectorAll('label')].find((l) => l.textContent.includes('Namen der Begleitung')).querySelector('input')
+    await act(async () => box.click())
+    await copy()
+    expect(writes[1]).toContain('Treueste Begleitung: kim')
+  })
+
+  it('ohne Zwischenablage → Text zum manuellen Kopieren', async () => {
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify(full)))
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: async () => { throw new Error('denied') } } })
+    const { el } = await renderScreen(<Wrapped />)
+    await waitFor(() => el.querySelector('.tile'))
+    await act(async () => [...el.querySelectorAll('button')].find((b) => b.textContent === 'Als Text kopieren').click())
+    await waitFor(() => el.querySelector('[aria-label="Text zum Kopieren"]'))
+    expect(el.querySelector('[aria-label="Text zum Kopieren"]').value).toContain('Filme: 4')
+  })
+})

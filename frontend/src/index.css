@@ -312,3 +312,5 @@ textarea.field { min-height: 72px; resize: vertical; font-family: inherit; }
 .outing p { margin: 4px 0; }
 .outing-title { font-size: 18px; font-weight: 700; }
 .att { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.poster-mosaic { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 16px; }
+.poster-mosaic img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; }
