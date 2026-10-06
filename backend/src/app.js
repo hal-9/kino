@@ -12,6 +12,7 @@ import { planningRouter } from './routes/planning.js'
 import { radarRouter } from './routes/radar.js'
 import { roomsRouter } from './routes/rooms.js'
 import { ticketFilesRouter } from './routes/ticketFiles.js'
+import { reactionsRouter } from './routes/reactions.js'
 
 export function createApp(db, deps = {}) {
   const app = express()
@@ -67,6 +68,7 @@ export function createApp(db, deps = {}) {
   app.use('/api', radarRouter(db, deps))
   app.use('/api', roomsRouter(db))
   app.use('/api', ticketFilesRouter(db))
+  app.use('/api', reactionsRouter(db))
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }))
   app.use((err, req, res, next) => {

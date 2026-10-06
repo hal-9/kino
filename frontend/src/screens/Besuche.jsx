@@ -155,6 +155,51 @@ function RoomNotes({ v, mine }) {
   )
 }
 
+// K35: kurze Reaktion, privat per Standard; „gemeinsam aufdecken“ zeigt Reaktionen anderer erst nach der eigenen.
+// Spoiler nur aufgeklappt. Bewertungen bleiben getrennt (K20).
+const VIS = { private: 'nur ich', reveal: 'gemeinsam aufdecken', household: 'Haushalt' }
+function Reactions({ v, mine }) {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const key = ['reactions', v.id]
+  const list = useQuery({ queryKey: key, queryFn: () => api.get(`/visits/${v.id}/reactions`), enabled: open })
+  const own = list.data?.reactions.find((r) => r.mine)
+  const [f, setF] = useState(null)
+  useEffect(() => { if (list.data) setF({ line: own?.line ?? '', spoiler: own?.spoiler ?? false, visibility: own?.visibility ?? 'private' }) }, [list.data]) // eslint-disable-line react-hooks/exhaustive-deps
+  const done = () => qc.invalidateQueries({ queryKey: ['reactions'] })
+  const save = useMutation({ mutationFn: () => api.put(`/visits/${v.id}/reaction`, { ...f, line: f.line.trim() }), onSuccess: done })
+  const del = useMutation({ mutationFn: () => api.delete(`/visits/${v.id}/reaction`), onSuccess: done })
+  return (
+    <details className="fix" onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>Reaktionen</summary>
+      <QueryError query={list} label="Reaktionen" />
+      <ul className="sub" aria-label="Reaktionen">
+        {list.data?.reactions.filter((r) => !r.mine).map((r) => (
+          <li key={r.visit_id}>{r.user_name}: {r.spoiler ? <details><summary>Spoiler anzeigen</summary>{r.line}</details> : r.line}</li>
+        ))}
+      </ul>
+      {list.data?.waiting > 0 && <p className="sub">{list.data.waiting} Reaktion(en) zum gemeinsamen Aufdecken. Sichtbar, wenn du selbst nicht-privat reagierst – freiwillig.</p>}
+      {mine && f && (
+        <>
+          <input className="field" aria-label="Deine Reaktion" placeholder="Ein Satz zum Film" maxLength={140} value={f.line} onChange={(e) => setF({ ...f, line: e.target.value })} />
+          <div className="two">
+            <select className="field" aria-label="Wer sieht das?" value={f.visibility} onChange={(e) => setF({ ...f, visibility: e.target.value })}>
+              {Object.entries(VIS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+            <label className="sub"><input type="checkbox" checked={f.spoiler} onChange={(e) => setF({ ...f, spoiler: e.target.checked })} /> Spoiler</label>
+          </div>
+          <MutationError mutation={save} />
+          <MutationError mutation={del} />
+          <div className="sheet-actions">
+            <button className="btn" disabled={!f.line.trim() || save.isPending} onClick={() => save.mutate()}>Reaktion speichern</button>
+            {own && <button className="btn" onClick={() => del.mutate()}>Reaktion löschen</button>}
+          </div>
+        </>
+      )}
+    </details>
+  )
+}
+
 export default function Besuche() {
   const { id } = useParams()
   const [params, setParams] = useSearchParams()
@@ -233,6 +278,7 @@ export default function Besuche() {
                 </div>
               )}
               {v.auditorium && v.snapshot.cinema_key && <RoomNotes v={v} mine={mine} />}
+              <Reactions v={v} mine={mine} />
               {mine && <a className="link-btn" href={lb.web} target="_blank" rel="noreferrer">Auf letterboxd.com öffnen</a>}
             </div>
           </section>

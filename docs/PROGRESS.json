@@ -1653,5 +1653,43 @@
     "next_ready": [
       "K35"
     ]
+  },
+  "K35": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "scope": "Minimal one-line reactions per own visit, private by default, optional 'reveal together' among the same booked outing and household visibility, spoiler flag collapsed in UI, owner-only edit/delete. Ratings stay K20 (manual vs Letterboxd) and are not part of reactions.",
+    "commands": {
+      "npm test": "shared 47/47, backend 188/188, frontend 87/87; exit 0",
+      "npm run build": "exit 0"
+    },
+    "modified": [
+      "backend/migrations/024_visit_reactions.sql (new: visit_reactions, visit_id PK ON DELETE CASCADE, visibility CHECK private|reveal|household)",
+      "backend/src/routes/reactions.js (new: PUT/DELETE /visits/:id/reaction, GET /visits/:id/reactions), backend/src/app.js",
+      "frontend/src/screens/Besuche.jsx (Reactions details panel)",
+      "backend/test/reactions.test.js (new), frontend/src/test/rooms.test.jsx (K35 case)"
+    ],
+    "migration_notes": "024 additive. Populated upgrade from 023 tested; visits unchanged; foreign_key_check/integrity_check ok.",
+    "acceptance": {
+      "K35-AC01": "passed (other participant's 'reveal' reaction absent from the API payload - only a count - until the viewer has a non-private reaction; other household 404)",
+      "K35-AC02": "passed (trigger = own non-private reaction on the same outing; own private reaction does not reveal; owner switching to private hides it again immediately)",
+      "K35-AC03": "passed (spoiler text absent from /visits, /stats/wrapped, proposal detail, proposal .ics, calendar feed and /radar; UI shows spoilers collapsed)",
+      "K35-AC04": "passed (non-owner PUT/DELETE 403, other household 404, invalid/empty 422, default visibility private, deleting the visit cascades the reaction)",
+      "K35-AC05": "passed (reaction writes leave letterboxd_rating/manual_rating untouched and vice versa)"
+    },
+    "decisions": [
+      "Outing = same proposal_id (booked event); manual visits without booking only have their own reaction.",
+      "Reveal is symmetric consent: a 'reveal' reaction becomes visible to participants who themselves chose reveal/household; nobody is prompted beyond an informational count.",
+      "No rating field on reactions (avoids a third rating source)."
+    ],
+    "deferred": [
+      "reveal trigger by time (e.g. after everyone had a chance)",
+      "reactions in Wrapped/story (deliberately excluded)"
+    ],
+    "gaps": [
+      "real browser check: not run"
+    ],
+    "next_ready": [
+      "K37"
+    ]
   }
 }
