@@ -106,7 +106,7 @@ describe('Besuche + Letterboxd', () => {
   it('TMDB ist ohne Key ein No-Op, mit Key setzt es ID und Poster', async () => {
     expect(await enrich(db, { fetch: async () => { throw new Error('nie') }, apiKey: '' })).toBe(0)
     db.prepare("INSERT INTO screenings (cinema_key, movie_id, starts_at, source) VALUES ('delphi-lux', ?, '2099-01-01T20:00:00+01:00', 'yorck')").run(movieId)
-    const fake = async () => ({ status: 200, json: async () => ({ results: [{ id: 42, poster_path: '/p.jpg', original_title: 'Day in Life', original_language: 'en' }] }) })
+    const fake = async () => ({ status: 200, json: async () => ({ results: [{ id: 42, title: 'Tag im Leben', release_date: '2026-03-01', poster_path: '/p.jpg', original_title: 'Day in Life', original_language: 'en' }] }) })
     expect(await enrich(db, { fetch: fake, apiKey: 'k' })).toBe(1)
     expect(db.prepare('SELECT tmdb_id, poster_url FROM movies WHERE id = ?').get(movieId)).toEqual({ tmdb_id: 42, poster_url: 'https://image.tmdb.org/t/p/w185/p.jpg' })
   })

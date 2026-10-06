@@ -424,3 +424,6 @@ textarea.field { min-height: 72px; resize: vertical; font-family: inherit; }
 /* Kalender-Link */
 .check-row { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; margin: 6px 0 4px; }
 .check-row input { width: 20px; height: 20px; flex: none; margin: 0; accent-color: var(--primary); }
+.fix { margin: 8px 0 4px; font-size: 14px; color: var(--muted); }
+.fix summary { cursor: pointer; padding: 6px 0; }
+.fix .field { margin-top: 8px; }

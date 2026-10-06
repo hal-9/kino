@@ -1,7 +1,45 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api.js'
-import { QueryError } from './QueryStatus.jsx'
+import { MutationError, QueryError } from './QueryStatus.jsx'
 import Sheet from './Sheet.jsx'
+
+const fmtWhen = (iso) => new Date(iso).toLocaleString('de-DE', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })
+const STATUS = {
+  not_found: 'Kein passender Film bei TMDB gefunden.',
+  ambiguous: 'Mehrere mögliche Filme bei TMDB – nicht automatisch zugeordnet.',
+  failed: 'TMDB war nicht erreichbar.',
+}
+
+// Zuordnungsstatus ehrlich anzeigen; erneut suchen oder von Hand korrigieren (TMDB-Link oder -ID).
+function Metadata({ m }) {
+  const qc = useQueryClient()
+  const [input, setInput] = useState('')
+  const put = (data) => qc.setQueryData(['movie', m.id], data)
+  const retry = useMutation({ mutationFn: () => api.post(`/movies/${m.id}/tmdb/retry`), onSuccess: put })
+  const fix = useMutation({
+    mutationFn: () => api.put(`/movies/${m.id}/tmdb`, { tmdb_id: Number(input.match(/(?:movie\/)?(\d+)/)?.[1]) || -1 }),
+    onSuccess: (d) => { put(d); setInput('') },
+  })
+  const { status, next_retry_at: next } = m.metadata ?? {}
+  return (
+    <>
+      {STATUS[status] && (
+        <p className="sub" role="status">
+          {STATUS[status]}{next && ` Nächster automatischer Versuch ab ${fmtWhen(next)}.`}{' '}
+          <button className="link-btn" disabled={retry.isPending} onClick={() => retry.mutate()}>Jetzt erneut suchen</button>
+        </p>
+      )}
+      <MutationError mutation={retry} text={(e) => (e.status === 429 ? 'Gerade erst gesucht. Bitte in einer Minute erneut.' : undefined)} />
+      <details className="fix">
+        <summary>{status === 'manual' ? 'Von Hand zugeordnet. Ändern?' : 'Falscher Film?'}</summary>
+        <input className="field" aria-label="TMDB-Link oder -ID" placeholder="TMDB-Link oder -ID" value={input} onChange={(e) => setInput(e.target.value)} />
+        <MutationError mutation={fix} text={(e) => (e.code === 'tmdb_id in use' ? 'Diese TMDB-ID gehört schon zu einem anderen Film.' : e.status === 422 ? 'Bitte einen TMDB-Film-Link oder eine Zahl eingeben.' : undefined)} />
+        <button className="btn" disabled={fix.isPending || !input.trim()} onClick={() => fix.mutate()}>Zuordnung speichern</button>
+      </details>
+    </>
+  )
+}
 
 const fmtDate = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' }) : null)
 
@@ -32,6 +70,7 @@ export default function MovieSheet({ movieId, onClose }) {
             </div>
           </div>
           {m.overview ? <p className="movie-overview">{m.overview}</p> : <p className="movie-overview muted">Keine Inhaltsangabe verfügbar.</p>}
+          <Metadata m={m} />
           <dl className="facts">
             {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
           </dl>

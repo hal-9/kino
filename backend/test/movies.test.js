@@ -16,7 +16,7 @@ describe('Film-Details', () => {
   }
   const tmdb = async (url) => {
     calls.push(url)
-    if (url.includes('/search/movie')) return json({ results: [{ id: 99 }] })
+    if (url.includes('/search/movie')) return json({ results: [{ id: 99, title: 'Digger', release_date: '2026-10-08' }] })
     if (url.includes('language=de-DE')) {
       return json({ overview: '', release_date: '2026-10-08', runtime: 129, poster_path: '/p.jpg', original_title: 'Digger', original_language: 'en',
         credits: { crew: [{ job: 'Producer', name: 'P' }, { job: 'Director', name: 'Regie Person' }], cast: Array.from({ length: 8 }, (_, i) => ({ name: `Actor ${i}` })) } })
