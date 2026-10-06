@@ -1,7 +1,12 @@
 const pad = (n) => String(n).padStart(2, '0')
 const utc = (d) =>
   `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`
-const esc = (s) => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n')
+// TEXT nach RFC 5545: Backslash zuerst, dann ; , und jede Zeilenumbruch-Art; übrige Steuerzeichen raus.
+// \x5c = Backslash (so geschrieben, weil Werkzeuge doppelte Backslashes zu einem kürzen können - vermutlich so entstand F03).
+const esc = (s) => String(s).replace(/\x5c/g, '\x5c\x5c').replace(/;/g, '\x5c;').replace(/,/g, '\x5c,')
+  .replace(/\r\n|\r|\n/g, '\x5cn').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '')
+// URI-Werte: keine Steuerzeichen, sonst könnten CR/LF neue Properties einschleusen.
+const uri = (s) => String(s).replace(/[\x00-\x1f\x7f]/g, '')
 
 // Zeilen > 75 Oktette falten (Umbruch + Leerzeichen), ohne UTF-8-Zeichen zu zerteilen.
 export function fold(line) {
@@ -36,7 +41,7 @@ export function icsEvent({ uid, seq, start, end, summary, location, geo, descrip
     `LOCATION:${esc(location)}`,
   ]
   if (geo) lines.push(`GEO:${geo}`)
-  lines.push(`DESCRIPTION:${esc(description)}`, `URL:${url}`,
+  lines.push(`DESCRIPTION:${esc(description)}`, `URL:${uri(url)}`,
     'BEGIN:VALARM', 'TRIGGER:-PT60M', 'ACTION:DISPLAY', 'DESCRIPTION:Kino in einer Stunde', 'END:VALARM', 'END:VEVENT')
   return lines.map(fold).join('\r\n')
 }
@@ -64,7 +69,7 @@ export function eventForProposal(db, proposalId, base) {
   const place = [s.cinema_name, s.street, [s.zip, 'Berlin'].filter(Boolean).join(' ')].filter(Boolean).join(', ')
   return icsEvent({
     uid: `proposal-${p.id}@kino.tunikb.com`,
-    seq: Math.floor(new Date(p.updated_at.replace(' ', 'T') + 'Z').getTime() / 1000),
+    seq: p.ics_seq,
     start,
     end: new Date(start.getTime() + ((s.runtime ?? 120) + 20) * 60_000),
     summary: `🎬 ${s.title}${s.version ? ` (${s.version})` : ''} · ${s.cinema_name}`,

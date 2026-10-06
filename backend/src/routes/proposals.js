@@ -118,7 +118,7 @@ export function proposalsRouter(db) {
     if (!opt) return res.status(404).json({ error: 'not found' })
     if (!(Date.parse(JSON.parse(opt.snapshot_json).starts_at) > Date.now())) return res.status(409).json({ error: 'expired' })
     db.prepare(
-      `UPDATE proposals SET status = 'booked', booked_option_id = ?, booked_by = ?, booked_at = datetime('now'), updated_at = datetime('now'),
+      `UPDATE proposals SET status = 'booked', booked_option_id = ?, booked_by = ?, booked_at = datetime('now'), updated_at = datetime('now'), ics_seq = ics_seq + 1,
        ticket_link = COALESCE(?, ticket_link) WHERE id = ?`
     ).run(parsed.data.option_id, req.user.id, parsed.data.ticket_link ?? null, p.id)
     res.json(loadProposals(db, req.user.householdId, p.id)[0])
@@ -131,7 +131,7 @@ export function proposalsRouter(db) {
     const parsed = ticketSchema.safeParse(req.body)
     if (!parsed.success) return res.status(422).json({ error: 'validation failed' })
     if (p.status !== 'booked') return res.status(409).json({ error: 'not booked' })
-    db.prepare("UPDATE proposals SET ticket_link = ?, updated_at = datetime('now') WHERE id = ?").run(parsed.data.ticket_link, p.id)
+    db.prepare("UPDATE proposals SET ticket_link = ?, updated_at = datetime('now'), ics_seq = ics_seq + 1 WHERE id = ?").run(parsed.data.ticket_link, p.id)
     res.json(loadProposals(db, req.user.householdId, p.id)[0])
   })
 
