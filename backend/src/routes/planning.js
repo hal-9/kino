@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { berlinYmd, isHm, isValidYmd, localRange } from 'shared'
+import { berlinYmd, isHm, isValidYmd, localRange, matchScreenings } from 'shared'
 import { requireAuth } from '../auth.js'
 
 const ymd = z.string().refine(isValidYmd)
@@ -22,7 +22,7 @@ export const readPrefs = (row) => prefsSchema.parse(row ? JSON.parse(row.prefs_j
 
 export function planningRouter(db) {
   const router = Router()
-  router.use(['/watchlist', '/planning'], requireAuth(db))
+  router.use(['/watchlist', '/planning', '/match'], requireAuth(db))
 
   // Eigene Merkliste; upcoming = aktuelle, echte Vorstellungen (keine erfundenen Termine).
   router.get('/watchlist', (req, res) => {
@@ -102,6 +102,45 @@ export function planningRouter(db) {
     const n = db.prepare('DELETE FROM availability WHERE id = ? AND user_id = ?').run(Number(req.params.id), req.user.id).changes
     if (!n) return res.status(404).json({ error: 'not found' })
     res.status(204).end()
+  })
+
+  // K28: „Nächster Kinoabend“. Nur echte, kommende, nicht zurückgezogene Vorstellungen gemerkter Filme (oder movie_id).
+  // Ergebnis = Vorschläge mit Begründung; nichts wird abgestimmt, vorgeschlagen oder gebucht.
+  router.get('/match', (req, res) => {
+    const hid = req.user.householdId
+    const mode = req.query.mode ?? 'all'
+    const days = Number(req.query.days ?? 14)
+    const movieId = req.query.movie_id === undefined ? null : Number(req.query.movie_id)
+    const memberIds = db.prepare('SELECT user_id FROM household_members WHERE household_id = ?').all(hid).map((m) => m.user_id)
+    const ids = req.query.participants === undefined ? memberIds : [...new Set(String(req.query.participants).split(',').map(Number))]
+    if (!['all', 'max'].includes(mode) || !Number.isInteger(days) || days < 1 || days > 28 || (movieId !== null && !Number.isInteger(movieId))
+      || !ids.length || ids.length > 20 || ids.some((i) => !memberIds.includes(i))) return res.status(422).json({ error: 'validation failed' })
+    const now = new Date()
+    const today = berlinYmd(now)
+    const prefs = db.prepare('SELECT * FROM planning_prefs WHERE user_id = ?')
+    const avail = db.prepare('SELECT starts_at, ends_at, kind FROM availability WHERE user_id = ? AND ends_at > ?')
+    const watch = db.prepare('SELECT movie_id FROM watchlist WHERE user_id = ? AND (expires_on IS NULL OR expires_on >= ?)')
+    const people = ids.map((id) => ({
+      id, visibility: prefs.get(id)?.visibility ?? 'fit_only', prefs: readPrefs(prefs.get(id)),
+      availability: avail.all(id, now.toISOString()), interested: watch.all(id, today).map((w) => w.movie_id),
+    }))
+    const movies = movieId !== null ? [movieId] : [...new Set(people.flatMap((p) => p.interested))]
+    const screenings = movies.length ? db
+      .prepare(
+        `SELECT s.id, s.movie_id, m.title, m.year, m.runtime, s.starts_at, s.version, s.auditorium, s.attrs_json, s.cinema_key,
+           c.name AS cinema_name, s.last_seen_at, s.provenance_json
+         FROM screenings s JOIN movies m ON m.id = s.movie_id JOIN cinemas c ON c.key = s.cinema_key
+         WHERE s.withdrawn_at IS NULL AND datetime(s.starts_at) > datetime(?) AND datetime(s.starts_at) < datetime(?)
+           AND s.movie_id IN (SELECT value FROM json_each(?)) ORDER BY s.starts_at, s.id LIMIT 2000`
+      )
+      .all(now.toISOString(), new Date(now.getTime() + days * 86400_000).toISOString(), JSON.stringify(movies))
+      .map(({ attrs_json, provenance_json, ...s }) => ({ ...s, attrs: JSON.parse(attrs_json), provenance: JSON.parse(provenance_json ?? '{}') }))
+      : []
+    const out = matchScreenings({ screenings, people, mode })
+    // Gründe anderer nur, wenn sie ihre Vorlieben freigegeben haben; sonst nur passt/passt nicht/unbekannt.
+    const shared = new Set(people.filter((p) => p.id === req.user.id || p.visibility === 'household').map((p) => p.id))
+    for (const r of out.results) r.people = r.people.map((f) => (shared.has(f.user_id) ? f : { user_id: f.user_id, fit: f.fit }))
+    res.json({ mode, days, participants: ids, movies: movies.length, generated_at: now.toISOString(), ...out })
   })
 
   return router

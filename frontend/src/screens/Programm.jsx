@@ -35,10 +35,10 @@ function writePrefs(uid, f) {
 
 // K13: Auswahl (ein Film, bis zu fünf Vorstellungen, eine Notiz) überlebt Tag-/Filterwechsel und Navigation im Tab.
 const DRAFT_KEY = 'kino.proposalDraft'
-function loadDraft() {
+export function loadDraft() {
   try { return JSON.parse(sessionStorage.getItem(DRAFT_KEY)) } catch { return null }
 }
-function saveDraft(d) {
+export function saveDraft(d) {
   try { d ? sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d)) : sessionStorage.removeItem(DRAFT_KEY) } catch {}
 }
 

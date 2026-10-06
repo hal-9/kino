@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api.js'
+import { api, newKey } from '../api.js'
+import { loadDraft, saveDraft } from './Programm.jsx'
 import { MutationError, QueryError } from '../components/QueryStatus.jsx'
 
 const fmt = (iso) => new Date(iso).toLocaleString('de-DE', { weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })
@@ -135,9 +136,85 @@ function Preferences() {
   )
 }
 
+const FIT = { fit: 'passt', no: 'passt nicht', unknown: 'unbekannt' }
+const REASON = {
+  version: 'Fassung passt nicht', version_unknown: 'Fassung unbekannt', cinema: 'anderes Kino', time: 'Uhrzeit passt nicht',
+  runtime_unknown: 'Laufzeit unbekannt', availability: 'keine Zeit', availability_unknown: 'Zeit nicht eingetragen',
+}
+const PART = { interest: 'gemerkt', cinema: 'Wunschkino', version: 'Wunschfassung' }
+const STATUS = { feasible: 'Passt für alle', tentative: 'Unsicher: nicht alles bekannt', partial: 'Passt nicht für alle' }
+
+// K28: Vorschläge aus echten Vorstellungen mit Begründung. Übergabe nur in die Auswahl (ein Film); Senden bleibt beim Menschen.
+function NextNight() {
+  const navigate = useNavigate()
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: () => api.get('/me') })
+  const plan = useQuery({ queryKey: ['planning'], queryFn: () => api.get('/planning') })
+  const people = me && plan.data ? [{ id: me.id, name: me.name }, ...plan.data.members] : []
+  const names = Object.fromEntries(people.map((p) => [p.id, p.name]))
+  const [picked, setPicked] = useState(null) // null = alle
+  const [mode, setMode] = useState('all')
+  const ids = picked ?? people.map((p) => p.id)
+  const [query, setQuery] = useState(null)
+  const match = useQuery({ queryKey: ['match', query], queryFn: () => api.get(`/match?${query}`), enabled: query != null })
+  const run = () => {
+    const q = new URLSearchParams({ mode, participants: ids.join(',') }).toString()
+    q === query ? match.refetch() : setQuery(q)
+  }
+  const toggle = (id) => setPicked(ids.includes(id) ? ids.filter((i) => i !== id) : [...ids, id])
+  function handoff(s) {
+    const d = loadDraft()
+    const show = { id: s.id, starts_at: s.starts_at, cinema_name: s.cinema_name, auditorium: s.auditorium, version: s.version, attrs: s.attrs }
+    if (d && d.movie.id !== s.movie_id && !confirm(`Auswahl für „${d.movie.title}“ verwerfen?`)) return
+    const same = d && d.movie.id === s.movie_id
+    if (same && (d.shows.some((x) => x.id === s.id) || d.shows.length >= 5)) return navigate(`/?q=${encodeURIComponent(s.title)}`)
+    saveDraft(same ? { ...d, shows: [...d.shows, show].sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at)) }
+      : { movie: { id: s.movie_id, title: s.title, runtime: s.runtime }, shows: [show], note: '', key: newKey() })
+    navigate(`/?q=${encodeURIComponent(s.title)}`)
+  }
+  const r = match.data
+  return (
+    <section className="group">
+      <h2 className="group-title">Nächster Kinoabend</h2>
+      <div className="card pad">
+        <p className="sub">Sucht unter den Vorstellungen gemerkter Filme der nächsten 14 Tage. Schlägt nur vor: abstimmen, vorschlagen und buchen bleibt bei euch.</p>
+        <fieldset className="sub">
+          <legend>Wer kommt mit?</legend>
+          {people.map((p) => <label key={p.id}><input type="checkbox" checked={ids.includes(p.id)} onChange={() => toggle(p.id)} /> {p.name} </label>)}
+        </fieldset>
+        <div className="chips-row">
+          <button className={`chip${mode === 'all' ? ' active' : ''}`} aria-pressed={mode === 'all'} onClick={() => setMode('all')}>Alle müssen können</button>
+          <button className={`chip${mode === 'max' ? ' active' : ''}`} aria-pressed={mode === 'max'} onClick={() => setMode('max')}>Möglichst viele</button>
+        </div>
+        <button className="btn primary" disabled={!ids.length} onClick={run}>Vorschläge finden</button>
+        <QueryError query={match} label="Vorschläge" />
+        {r && !r.results.length && (
+          <p className="sub" role="status">
+            {r.movies === 0 ? 'Niemand hat einen Film gemerkt.' : `Keine passende Vorstellung (${r.considered} geprüft).`}
+            {Object.keys(r.excluded).length > 0 && ` Ausgeschlossen wegen: ${Object.entries(r.excluded).map(([k, n]) => `${REASON[k] ?? k} (${n})`).join(', ')}.`}
+            {mode === 'all' && r.movies > 0 && ' „Möglichst viele“ zeigt, wer wann könnte.'}
+          </p>
+        )}
+        {r?.results.map(({ screening: s, status, score, parts, people: fits }) => (
+          <div key={s.id} className="opt" aria-label={`Vorschlag ${s.title} ${s.cinema_name}`}>
+            <strong>{s.title} · {fmt(s.starts_at)} · {s.cinema_name}</strong>
+            <small>{[s.auditorium, s.version ?? 'Fassung unbekannt', s.runtime ? `${s.runtime} min` : 'Laufzeit unbekannt'].filter(Boolean).join(' · ')}</small>
+            <small>{STATUS[status]}{score > 0 && ` · ${parts.map((p) => `${p.people}× ${PART[p.code]} (+${p.points})`).join(', ')}`}</small>
+            <ul className="sub">
+              {fits.map((f) => <li key={f.user_id}>{names[f.user_id] ?? 'Jemand'}: {FIT[f.fit]}{f.reasons?.length ? ` (${f.reasons.map((x) => REASON[x] ?? x).join(', ')})` : ''}</li>)}
+            </ul>
+            <button className="mini" onClick={() => handoff(s)}>In die Auswahl übernehmen</button>
+          </div>
+        ))}
+        {r && <p className="sub">Stand der Daten: {new Date(r.generated_at).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })}. Ob es noch Tickets gibt, steht nur beim Kino.</p>}
+      </div>
+    </section>
+  )
+}
+
 export default function Planen() {
   return (
     <>
+      <NextNight />
       <Watchlist />
       <Preferences />
     </>

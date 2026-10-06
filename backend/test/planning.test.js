@@ -90,6 +90,66 @@ describe('K27 Merkliste und Vorlieben', () => {
   })
 })
 
+// K28: Nächster Kinoabend über echte Vorstellungen.
+describe('K28 GET /match', () => {
+  let app, db, users, c1, c2, eve, mid, sids
+  beforeEach(async () => {
+    ;({ app, db, users } = setupTestApp())
+    c1 = await loginCookie(app, users[0])
+    c2 = await loginCookie(app, users[1])
+    db.prepare("INSERT INTO households (id, name) VALUES (2, 'Andere')").run()
+    const eveId = Number(db.prepare("INSERT INTO users (name, email, password_digest) VALUES ('eve', 'eve@example.com', ?)").run(bcrypt.hashSync('password9', 4)).lastInsertRowid)
+    db.prepare('INSERT INTO household_members (household_id, user_id) VALUES (2, ?)').run(eveId)
+    eve = await loginCookie(app, { email: 'eve@example.com', password: 'password9' })
+    db.prepare("INSERT INTO cinemas (key, name) VALUES ('zoo-palast', 'Zoo Palast'), ('delphi', 'Delphi')").run()
+    mid = Number(db.prepare("INSERT INTO movies (title, norm_title, year, runtime) VALUES ('Digger', 'digger', 2026, 100)").run().lastInsertRowid)
+    const ins = db.prepare("INSERT INTO screenings (cinema_key, movie_id, starts_at, version, source, provenance_json) VALUES (?, ?, ?, ?, 'zoopalast', ?)")
+    const prov = JSON.stringify({ version: { source: 'zoopalast', observed_at: '2026-10-08T06:00:00Z' } })
+    sids = [
+      ins.run('zoo-palast', mid, '2026-10-09T20:00:00+02:00', 'OV', prov),
+      ins.run('delphi', mid, '2026-10-09T20:00:00+02:00', 'DF', prov),
+      ins.run('zoo-palast', mid, '2026-10-10T20:00:00+02:00', null, null),
+    ].map((r) => Number(r.lastInsertRowid))
+    db.prepare("UPDATE screenings SET withdrawn_at = '2026-10-08' WHERE id = ?").run(ins.run('zoo-palast', mid, '2026-10-11T20:00:00+02:00', 'OV', null).lastInsertRowid)
+    setNow('2026-10-08T10:00:00Z')
+    await request(app).put(`/api/watchlist/${mid}`).set('Cookie', c1).send({}).expect(200)
+    for (const c of [c1, c2]) {
+      await request(app).post('/api/planning/availability').set('Cookie', c).send({ date: '2026-10-09', from: '18:00', to: '23:59', kind: 'free' }).expect(201)
+      await request(app).post('/api/planning/availability').set('Cookie', c).send({ date: '2026-10-10', from: '18:00', to: '23:59', kind: 'free' }).expect(201)
+    }
+  })
+  afterEach(() => vi.useRealTimers())
+  const match = (q = '', cookie = c1) => request(app).get(`/api/match${q}`).set('Cookie', cookie)
+
+  it('AC01/AC03: hartes Nein schließt aus; Ergebnis nennt echte Vorstellung, Laufzeit, Herkunft, Punkte', async () => {
+    await request(app).put('/api/planning/prefs').set('Cookie', c2).send({ prefs: { version: { value: 'ov', strength: 'hard' } } }).expect(200)
+    const r = (await match().expect(200)).body
+    expect(r.results.map((x) => x.screening.id)).toEqual([sids[0], sids[2]]) // DF ausgeschlossen, zurückgezogene fehlt
+    expect(r.excluded).toEqual({ version: 1 })
+    expect(r.results[0]).toMatchObject({
+      status: 'feasible', score: 22, parts: [{ code: 'interest', people: 1, points: 20 }, { code: 'version', people: 1, points: 2 }],
+      screening: { id: sids[0], title: 'Digger', runtime: 100, version: 'OV', cinema_name: 'Zoo Palast', provenance: { version: { source: 'zoopalast' } } },
+    })
+    // AC02: unbekannte Fassung bei harter OV-Vorgabe → nur unsicher, nie „passt“
+    expect(r.results[1]).toMatchObject({ status: 'tentative', people: [{ user_id: 1, fit: 'fit' }, { user_id: 2, fit: 'unknown' }] })
+    // Gründe von Kim (fit_only) bleiben verborgen, eigene sichtbar
+    expect(r.results[1].people[1].reasons).toBeUndefined()
+  })
+
+  it('AC04/AC05: stabil; nur Lesen (keine Stimme, kein Vorschlag); Haushalt geprüft; leer statt erfunden', async () => {
+    const a = (await match('?mode=max').expect(200)).body
+    const b = (await match('?mode=max').expect(200)).body
+    expect(a).toEqual(b)
+    expect(db.prepare('SELECT COUNT(*) n FROM proposals').get().n + db.prepare('SELECT COUNT(*) n FROM votes').get().n).toBe(0)
+    expect((await match('?participants=1,3')).status).toBe(422) // eve ist nicht im Haushalt
+    expect((await match('?mode=book')).status).toBe(422)
+    expect((await match('', eve).expect(200)).body.results).toEqual([]) // eve hat nichts gemerkt; fremde Merklisten zählen nicht
+    await request(app).delete(`/api/watchlist/${mid}`).set('Cookie', c1).expect(204)
+    expect((await match().expect(200)).body).toMatchObject({ movies: 0, results: [] })
+    expect((await match(`?movie_id=${mid}&participants=2`).expect(200)).body.results).toHaveLength(3)
+  })
+})
+
 describe('Migration 020 auf befüllter DB', () => {
   it('additiv; vorhandene Daten bleiben, Integrität ok', () => {
     const db = new Database(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'kino-mig-')), 'up.db'))

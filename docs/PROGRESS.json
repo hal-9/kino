@@ -1396,5 +1396,54 @@
     "next_ready": [
       "K28"
     ]
+  },
+  "K28": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "scope": "Pure D07 matcher (hard filter, then transparent soft score, two modes), read-only GET /match over real canonical screenings of watchlisted films, 'Nächster Kinoabend' UI with handoff into the existing one-film proposal draft. Matcher, endpoint and UI tested separately.",
+    "commands": {
+      "npm test": "shared 42/42, backend 161/161, frontend 79/79; exit 0",
+      "npm run build": "exit 0"
+    },
+    "modified": [
+      "shared/planning.js (personFit, matchScreenings, MATCH_POINTS), shared/planning.test.js",
+      "backend/src/routes/planning.js (GET /match?mode=all|max&participants=&movie_id=&days=1..28)",
+      "backend/test/planning.test.js (K28 GET /match)",
+      "frontend/src/screens/Planen.jsx (NextNight section), frontend/src/screens/Programm.jsx (export loadDraft/saveDraft)",
+      "frontend/src/test/planen.test.jsx (K28 case)"
+    ],
+    "migration_notes": "No schema change.",
+    "definitions": {
+      "candidates": "non-withdrawn screenings starting after now and within `days` (default 14) of films on participants' non-expired watchlists, or one explicit movie_id",
+      "hard constraints": "version (hard), cinema list (hard), earliest start / latest end incl. personal buffer + 20 min ads, busy ranges; any 'no' excludes in mode all",
+      "unknown": "unknown runtime, unknown version under a hard version rule, or no free range covering start..estimated end -> person fit 'unknown' -> result 'tentative' (mode all) / 'partial' (mode max); never 'feasible'",
+      "soft score": "20 per participant who watchlisted the film, 5 per participant listing the cinema, 2 per participant whose version preference is met by a known version (tunable product defaults, not a taste model)",
+      "order": "mode all: feasible before tentative, score desc, known fit desc, start asc, id asc; mode max: known fit desc first",
+      "privacy": "reasons are codes, never schedule values; reasons of other members with visibility fit_only are stripped, only fit/no/unknown returned"
+    },
+    "acceptance": {
+      "K28-AC01": "passed (shared: 4 interested soft-preferring members + 1 hard DF veto -> no result; busy veto; backend: DF screening excluded with excluded.version=1)",
+      "K28-AC02": "passed (unknown runtime/version/availability -> 'unknown', status tentative, never feasible)",
+      "K28-AC03": "passed (result carries real screening id, title, runtime, version, cinema, last_seen_at and provenance_json; score parts list code/people/points)",
+      "K28-AC04": "passed (identical result for reversed input order and repeated requests at frozen time; 1 and 0 results returned when fewer qualify)",
+      "K28-AC05": "passed (GET /match creates no proposals/votes; UI handoff only writes the one-film draft in sessionStorage, no POST; sending stays the existing human 'Vorschlag senden' step)"
+    },
+    "decisions": [
+      "Candidates restricted to watchlisted films (interest drives the night); explicit movie_id for 'compare this film'.",
+      "Freshness is shown as evidence (last_seen_at/provenance/generated_at) but not used as a score; withdrawn screenings never appear.",
+      "Relaxation is user-driven: excluded reason counts are shown and the user may switch to 'Möglichst viele'.",
+      "Recommendation cards may show one film three times; a ballot handoff stays one film (adding a different film asks before replacing the draft)."
+    ],
+    "deferred": [
+      "verified room/format scoring (no structured data)",
+      "trusted-freshness tie-break (all non-withdrawn rows treated equal)"
+    ],
+    "gaps": [
+      "real browser journey from match -> Programm tray -> send: not run"
+    ],
+    "next_ready": [
+      "K29",
+      "K34"
+    ]
   }
 }
