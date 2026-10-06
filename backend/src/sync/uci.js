@@ -34,6 +34,6 @@ export function parseUci(html) {
 }
 
 export async function fetchShows(ctx) {
-  const html = await getHtml(ctx, 'https://www.uci-kinowelt.de/kinoprogramm/berlin-mercedes-platz/82', 'uci.html')
-  return parseUci(html)
+  const { html, capturedAt } = await getHtml(ctx, 'https://www.uci-kinowelt.de/kinoprogramm/berlin-mercedes-platz/82', 'uci.html')
+  return { rows: parseUci(html), capturedAt }
 }

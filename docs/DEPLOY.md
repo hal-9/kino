@@ -138,6 +138,22 @@ Log: `~/Library/Logs/kino-inbox.log`. Ist der Mac mehrere Tage aus, fallen UCI u
 Alhambra nach 36 h auf den Live-Abruf (403) zurück; Zeiten kommen dann weiter von kinoheld,
 nur Fassung/Saal fehlen, und die Einstellungen zeigen „veraltet“.
 
+Jede Seite wird für sich geholt, geprüft und atomar veröffentlicht (Upload als `.name.tmp`, dann
+`mv`); fällt eine aus, kommt die andere trotzdem an (Exit-Code ≠ 0 meldet den Teilausfall).
+`scp -p` erhält die mtime: der Sync führt sie als Capture-Zeit (`last_captured_at`), nicht die Importzeit.
+
+## Sync-Betrieb und Frische
+
+- Takt: Server-Sync 15 s nach Start, dann alle 12 h; Mac-Inbox täglich 07:40 (+ sofortiger Sync).
+  Inbox-Dateien gelten 36 h. „Veraltet“ in der App = letzter Erfolg einer Quelle älter als 36 h.
+- Ein Schreiber: Server-Timer und `run.js` (CLI/Mac) teilen sich eine Lease in `sync_lease`
+  (15 min, Heartbeat vor jedem Abruf, Prüfung in jeder Import-Transaktion). Läuft schon ein Sync,
+  meldet der zweite „übersprungen“. Ein abgestürzter Lauf blockiert höchstens 15 min.
+- Abwesende Vorstellungen werden nur bei vollständig gemeldeten Quellen (kinoheld, Zoo Palast) und
+  nach zwei verschiedenen Captures mit ≥ 6 h Abstand zurückgezogen (nicht gelöscht).
+- `GET /api/healthz` = Prozess lebt, `GET /api/readyz` = DB lesbar (503 sonst). Beide öffentlich und ohne
+  Details; Quellen-Zeitpunkte und Fehler nur angemeldet unter `/api/sources`.
+
 ## Später: Update ausrollen
 
 ```bash

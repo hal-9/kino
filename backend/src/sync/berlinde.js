@@ -36,6 +36,6 @@ export function parseBerlinde(html) {
 }
 
 export async function fetchShows(ctx) {
-  const html = await getHtml(ctx, 'https://www.berlin.de/kino/_bin/kinodetail.php/34187/', 'berlinde-alhambra.html')
-  return parseBerlinde(html)
+  const { html, capturedAt } = await getHtml(ctx, 'https://www.berlin.de/kino/_bin/kinodetail.php/34187/', 'berlinde-alhambra.html')
+  return { rows: parseBerlinde(html), capturedAt }
 }

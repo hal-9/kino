@@ -87,7 +87,7 @@ describe('Inbox (Mac-Upload)', () => {
   it('frische Datei hat Vorrang vor dem Live-Abruf, veraltete nicht', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inbox-'))
     fs.copyFileSync(path.join(fixtures, 'uci.html'), path.join(dir, 'uci.html'))
-    expect((await uci.fetchShows(ctx(dir, dead))).length).toBeGreaterThan(0)
+    expect((await uci.fetchShows(ctx(dir, dead))).rows.length).toBeGreaterThan(0)
     const old = new Date(Date.now() - 40 * 3600_000)
     fs.utimesSync(path.join(dir, 'uci.html'), old, old)
     await expect(uci.fetchShows(ctx(dir, dead))).rejects.toThrow('HTTP 403')

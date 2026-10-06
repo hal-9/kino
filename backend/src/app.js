@@ -29,7 +29,17 @@ export function createApp(db, deps = {}) {
     next()
   })
 
+  // Liveness (Prozess antwortet) getrennt von Readiness (DB lesbar). Öffentlich, daher nur ok/nicht ok;
+  // Quellen-Frische steht authentifiziert unter /api/sources.
   app.get('/api/healthz', (req, res) => res.json({ ok: true }))
+  app.get('/api/readyz', (req, res) => {
+    try {
+      db.prepare('SELECT COUNT(*) FROM schema_migrations').get()
+      res.json({ ok: true, db: 'ok' })
+    } catch {
+      res.status(503).json({ ok: false, db: 'unavailable' })
+    }
+  })
   app.use('/api', authRouter(db))
   // calendarRouter vor programRouter: dessen requireAuth darf den Cookie-freien Feed nicht abfangen.
   app.use('/api', calendarRouter(db))

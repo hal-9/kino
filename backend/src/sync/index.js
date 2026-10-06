@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { berlinYmd, normTitle, slugify } from 'shared'
@@ -14,7 +15,34 @@ import * as letterboxd from '../letterboxd.js'
 
 const CINEMAS_JSON = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'data', 'cinemas.json')
 const ADAPTERS = { kinoheld, yorck, zoopalast, uci, berlinde }
-let running = false
+
+// Lease über Prozesse (Server-Timer, CLI): kurze Transaktionen, nie über Netzabrufe gehalten.
+const LEASE_TTL_MS = 15 * 60_000
+class LeaseLost extends Error {}
+
+// → Fencing-Token oder null, wenn ein anderer Besitzer eine gültige Lease hält.
+export function acquireLease(db, owner) {
+  return db.transaction(() => {
+    const now = Date.now()
+    const row = db.prepare("SELECT * FROM sync_lease WHERE name = 'sync'").get()
+    if (row && row.owner !== owner && Date.parse(row.expires_at) > now) return null
+    const token = (row?.token ?? 0) + 1
+    db.prepare(
+      `INSERT INTO sync_lease (name, owner, token, expires_at) VALUES ('sync', ?, ?, ?)
+       ON CONFLICT (name) DO UPDATE SET owner = excluded.owner, token = excluded.token, expires_at = excluded.expires_at`
+    ).run(owner, token, new Date(now + LEASE_TTL_MS).toISOString())
+    return token
+  }).immediate()
+}
+
+// Heartbeat + Fencing: verlängert nur die eigene, noch gültige Lease; sonst LeaseLost (kein Commit mehr).
+function holdLease(db, lease) {
+  const now = Date.now()
+  const ok = db
+    .prepare("UPDATE sync_lease SET expires_at = ? WHERE name = 'sync' AND owner = ? AND token = ? AND expires_at > ?")
+    .run(new Date(now + LEASE_TTL_MS).toISOString(), lease.owner, lease.token, new Date(now).toISOString()).changes
+  if (!ok) throw new LeaseLost('Sync-Lease verloren')
+}
 
 export function seedCinemas(db) {
   const favs = JSON.parse(fs.readFileSync(CINEMAS_JSON, 'utf8'))
@@ -232,9 +260,10 @@ function retireMissing(db, source, coverage, seen, now) {
 
 // Ein Quell-Import ist eine Transaktion: Daten, Rückzüge und Erfolgszeitpunkte gemeinsam oder gar nicht.
 // last_ok_at = letzter erfolgreicher (auch teilweiser) Import; last_complete_import_at nur mit vollständigem Scope.
-function importSource(db, source, rows, coverage, now, capturedAt = now) {
+function importSource(db, source, rows, coverage, now, capturedAt = now, lease) {
   const digest = crypto.createHash('sha256').update(JSON.stringify(rows)).digest('hex')
   db.transaction(() => {
+    if (lease) holdLease(db, lease) // in derselben Transaktion: nur der gültige Besitzer committet
     const { seen, touched } = mergeRows(db, rows, capturedAt)
     const prev = db.prepare('SELECT last_digest FROM source_health WHERE source = ?').get(source)
     // Derselbe Inhalt erneut (z. B. Cache-Replay) ist keine neue Abwesenheitsbeobachtung.
@@ -261,8 +290,12 @@ function recordFailure(db, source, message, now) {
 }
 
 export async function runSync(db, { fetch = createFetch(), log = console.log, adapters = ADAPTERS, today, minRows = (m) => m.MIN_ROWS } = {}) {
-  if (running) return { skipped: true }
-  running = true
+  const lease = { owner: `${os.hostname()}:${process.pid}:${crypto.randomUUID()}` }
+  lease.token = acquireLease(db, lease.owner)
+  if (!lease.token) {
+    log('sync: läuft bereits (Lease belegt), übersprungen')
+    return { skipped: true }
+  }
   try {
     today ??= berlinYmd()
     seedCinemas(db)
@@ -270,7 +303,9 @@ export async function runSync(db, { fetch = createFetch(), log = console.log, ad
 
     if (adapters.kinoheld?.fetchCinemas) {
       try {
-        upsertKinoheldCinemas(db, await adapters.kinoheld.fetchCinemas(ctx))
+        const list = await adapters.kinoheld.fetchCinemas(ctx)
+        holdLease(db, lease)
+        upsertKinoheldCinemas(db, list)
         ctx.cinemas = loadCinemas(db)
         const setAud = db.prepare(
           `INSERT INTO auditoriums (cinema_key, name, seats) VALUES (?, ?, ?)
@@ -302,6 +337,7 @@ export async function runSync(db, { fetch = createFetch(), log = console.log, ad
     const ok = []
     // Basis zuerst, Overlays danach (Reihenfolge der Keys in ADAPTERS); jede Quelle für sich atomar.
     for (const [name, mod] of Object.entries(adapters)) {
+      holdLease(db, lease) // Heartbeat vor jedem (langen) Abruf
       const now = new Date().toISOString()
       try {
         // Adapter liefern Zeilen oder { rows, coverage }; coverage = vollständig gemeldeter Scope { cinemas, from, to }.
@@ -312,20 +348,26 @@ export async function runSync(db, { fetch = createFetch(), log = console.log, ad
         const r = fetched.filter((x) => x.startsAt)
         if (r.length < fetched.length) log(`${name}: ${fetched.length - r.length} Vorstellungen ohne eindeutige Zeit verworfen`)
         if (r.length < minRows(mod)) throw new Error(`nur ${r.length} Vorstellungen (erwartet ≥ ${minRows(mod)})`)
-        importSource(db, name, r, r.length < fetched.length ? null : coverage, now, capturedAt)
+        importSource(db, name, r, r.length < fetched.length ? null : coverage, now, capturedAt, lease)
         total += r.length
         ok.push(name)
         log(`${name}: ok ${r.length}${coverage ? ' (vollständig)' : ''}`)
       } catch (e) {
+        if (e instanceof LeaseLost) throw e
         recordFailure(db, name, e.message, now)
         log(`${name}: FEHLER ${e.message}`)
       }
     }
 
+    holdLease(db, lease)
     await tmdb.enrich(db, { fetch, log }).catch((e) => log(`tmdb: ${e.message}`))
     await letterboxd.syncRatings(db, { fetch, log }).catch((e) => log(`letterboxd: ${e.message}`))
     return { ok, rows: total }
+  } catch (e) {
+    if (!(e instanceof LeaseLost)) throw e
+    log('sync: Lease verloren, Lauf abgebrochen (nichts weiter geschrieben)')
+    return { leaseLost: true }
   } finally {
-    running = false
+    db.prepare('UPDATE sync_lease SET expires_at = ? WHERE owner = ? AND token = ?').run(new Date().toISOString(), lease.owner, lease.token)
   }
 }

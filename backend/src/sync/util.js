@@ -35,10 +35,13 @@ export const decodeEntities = (s) =>
 // in <data>/inbox ab. Frische Datei (< 36 h) hat Vorrang, sonst Live-Abruf.
 export const inboxDir = () => process.env.INBOX_DIR || path.join(path.dirname(process.env.DATABASE_PATH || './data/app.db'), 'inbox')
 
+// → { html, capturedAt }: bei Inbox-Dateien ist capturedAt die mtime (Abrufzeit auf dem Mac), nicht die Importzeit.
 export async function getHtml(ctx, url, inboxName) {
   const f = path.join(ctx.inboxDir ?? inboxDir(), inboxName)
   try {
-    if (Date.now() - fs.statSync(f).mtimeMs < 36 * 3600_000) return fs.readFileSync(f, 'utf8')
+    const { mtimeMs } = fs.statSync(f)
+    if (Date.now() - mtimeMs < 36 * 3600_000) return { html: fs.readFileSync(f, 'utf8'), capturedAt: new Date(mtimeMs).toISOString() }
   } catch {}
-  return (await getOk(ctx, url, { headers: { accept: 'text/html' } })).text()
+  const html = await (await getOk(ctx, url, { headers: { accept: 'text/html' } })).text()
+  return { html, capturedAt: new Date().toISOString() }
 }
