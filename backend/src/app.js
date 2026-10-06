@@ -3,6 +3,8 @@ import cookieParser from 'cookie-parser'
 import rateLimit from 'express-rate-limit'
 import { authRouter } from './routes/auth.js'
 import { programRouter } from './routes/program.js'
+import { proposalsRouter } from './routes/proposals.js'
+import { calendarRouter } from './routes/calendar.js'
 
 export function createApp(db, _deps = {}) {
   const app = express()
@@ -26,7 +28,10 @@ export function createApp(db, _deps = {}) {
 
   app.get('/api/healthz', (req, res) => res.json({ ok: true }))
   app.use('/api', authRouter(db))
+  // calendarRouter vor programRouter: dessen requireAuth darf den Cookie-freien Feed nicht abfangen.
+  app.use('/api', calendarRouter(db))
   app.use('/api', programRouter(db))
+  app.use('/api', proposalsRouter(db))
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }))
   app.use((err, req, res, next) => {

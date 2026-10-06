@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api.js'
+import Sheet from '../components/Sheet.jsx'
 
 const dayLabel = (ymd, i) =>
   i === 0 ? 'Heute' : new Date(`${ymd}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric' })
 const time = (iso) => iso.slice(11, 16)
 const dateShort = (iso) => new Date(`${iso.slice(0, 10)}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'numeric' })
 
-function Row({ s, showDate }) {
+function Row({ s, showDate, picking, selected, onPick }) {
   const body = (
     <>
+      {picking && <span className="check-box">{selected && '✓'}</span>}
       <span className="show-time">{showDate && <small>{dateShort(s.starts_at)}</small>}{time(s.starts_at)}</span>
       <span className="show-main">
         <strong>{s.cinema_name}</strong>
@@ -20,6 +23,7 @@ function Row({ s, showDate }) {
       {s.version && <span className={`badge ${s.version === 'DF' ? '' : 'ov'}`}>{s.version}</span>}
     </>
   )
+  if (picking) return <button className={`show${selected ? ' sel' : ''}`} onClick={onPick}>{body}</button>
   return s.ticket_url
     ? <a className="show" href={s.ticket_url} target="_blank" rel="noreferrer">{body}</a>
     : <div className="show">{body}</div>
@@ -29,21 +33,47 @@ function MovieCard({ movie, favOnly, showDate }) {
   const fav = movie.screenings.filter((s) => s.is_favorite)
   const rest = favOnly ? [] : movie.screenings.filter((s) => !s.is_favorite)
   const [open, setOpen] = useState(fav.length === 0)
+  const [picking, setPicking] = useState(false)
+  const [sel, setSel] = useState([])
+  const [sheet, setSheet] = useState(false)
+  const [note, setNote] = useState('')
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const create = useMutation({
+    mutationFn: () => api.post('/proposals', { movie_id: movie.id, screening_ids: sel, note: note || undefined }),
+    onSuccess: (p) => { qc.invalidateQueries({ queryKey: ['proposals'] }); navigate(`/vorschlaege/${p.id}`) },
+  })
+  const toggle = (id) => setSel((x) => (x.includes(id) ? x.filter((i) => i !== id) : x.length < 5 ? [...x, id] : x))
+  const row = (s) => <Row key={s.id} s={s} showDate={showDate} picking={picking} selected={sel.includes(s.id)} onPick={() => toggle(s.id)} />
   return (
     <section className="group">
       <h2 className="group-title">
         {movie.title}
         <span className="n">{[movie.year, movie.runtime && `${movie.runtime} min`].filter(Boolean).join(' · ')}</span>
+        <button className="link-btn" onClick={() => { setPicking(!picking); setSel([]); setOpen(true) }}>{picking ? 'Abbrechen' : 'Vorschlagen'}</button>
       </h2>
       <div className="card">
-        {fav.map((s) => <Row key={s.id} s={s} showDate={showDate} />)}
+        {fav.map(row)}
         {rest.length > 0 && fav.length > 0 && (
           <button className="show more" onClick={() => setOpen(!open)}>
             {open ? '▾' : '▸'} Weitere Kinos ({rest.length})
           </button>
         )}
-        {open && rest.map((s) => <Row key={s.id} s={s} showDate={showDate} />)}
+        {open && rest.map(row)}
       </div>
+      {picking && (
+        <button className="btn primary pickbar" disabled={sel.length < 2} onClick={() => setSheet(true)}>
+          {sel.length < 2 ? `2–5 Vorstellungen wählen (${sel.length})` : `${sel.length} gewählt · Vorschlagen`}
+        </button>
+      )}
+      <Sheet open={sheet} onClose={() => setSheet(false)}>
+        <h3>{movie.title} vorschlagen</h3>
+        <textarea className="field" placeholder="Notiz (optional)" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} />
+        <div className="sheet-actions">
+          <button className="btn" onClick={() => setSheet(false)}>Zurück</button>
+          <button className="btn primary" disabled={create.isPending} onClick={() => create.mutate()}>Vorschlag senden</button>
+        </div>
+      </Sheet>
     </section>
   )
 }

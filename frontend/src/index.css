@@ -358,3 +358,27 @@ a.show:active, button.show:active { background: var(--surface2); }
 .badge.ov { background: var(--primary-dim); color: var(--primary); }
 .show.more { color: var(--muted); font-size: 13px; font-weight: 600; }
 .stale { background: var(--primary-dim); color: var(--primary); border-radius: 12px; padding: 8px 12px; font-size: 13px; margin-bottom: 10px; }
+
+/* Vorschläge */
+.card.pad { padding: 14px; }
+.note { padding: 10px 14px 0; color: var(--muted); font-size: 14px; }
+.opt { padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.opt:last-child { border-bottom: 0; }
+.opt.best { background: var(--primary-dim); }
+.opt.booked { box-shadow: inset 3px 0 0 var(--accent); }
+.opt-head { display: flex; justify-content: space-between; align-items: center; }
+.opt-votes { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+.opt-votes .avatar { margin-left: 0; position: relative; opacity: 0.45; }
+.opt-votes .avatar i { position: absolute; right: -4px; bottom: -4px; font-style: normal; font-size: 11px; font-weight: 800; }
+.opt-votes .avatar.v-yes { opacity: 1; } .opt-votes .avatar.v-maybe { opacity: 0.8; }
+.opt-votes .avatar.v-no { opacity: 0.45; text-decoration: line-through; }
+.tri { margin-left: auto; display: flex; gap: 6px; }
+.tri button { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-weight: 800; font-size: 15px; }
+.tri button.on { color: var(--on-primary); border-color: transparent; }
+.tri button.on.yes { background: var(--primary); } .tri button.on.maybe { background: var(--accent); } .tri button.on.no { background: var(--danger); }
+.sheet-actions a.btn { text-decoration: none; text-align: center; }
+.pickbar { position: sticky; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 8px); z-index: 5; }
+.show.sel { background: var(--primary-dim); }
+.check-box { width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--line); display: grid; place-items: center; font-size: 14px; color: var(--on-primary); flex: none; }
+.show.sel .check-box { background: var(--primary); border-color: var(--primary); }
+textarea.field { min-height: 72px; resize: vertical; font-family: inherit; }
