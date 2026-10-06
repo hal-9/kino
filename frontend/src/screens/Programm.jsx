@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AD_MINUTES, addDays, berlinYmd, concierge, estimatedEnd, isValidYmd, versionFit } from 'shared'
+import { AD_MINUTES, addDays, berlinYmd, estimatedEnd, isValidYmd, versionFit } from 'shared'
 import { api, errorText, newKey } from '../api.js'
 import { QueryError } from '../components/QueryStatus.jsx'
 import { cachedGet } from '../lib/offline.js'
@@ -82,38 +82,6 @@ function MovieCard({ movie, favOnly, showDate, onPropose, onInfo, selected }) {
         {unsure.map(row)}
       </div>
     </section>
-  )
-}
-
-// K34: Wunsch in Worten → sichtbare, prüfbare Filter; erst „Übernehmen“ ändert etwas (nur die URL-Filter).
-// Deterministisch und lokal; offen Gebliebenes wird angezeigt, Kandidaten wählt der Mensch. Keine Aktionen.
-const LABEL = { tag: 'Tag', q: 'Titel', ov: 'OV/OmU', fav: 'Nur Favoriten', ab: 'Beginn ab', bis: 'Ende bis', version: 'Fassung' }
-const shown = (k, v) => (v === true ? LABEL[k] : `${LABEL[k]}: ${k === 'tag' ? dateShort(`${v}T12:00`) : v}`)
-function Concierge({ onApply }) {
-  const [text, setText] = useState('')
-  const [r, setR] = useState(null)
-  const run = async () => setR(await concierge(text, { today: berlinYmd() }))
-  const apply = (filters) => { onApply(filters); setR(null); setText('') }
-  return (
-    <details className="fix">
-      <summary>Wunsch in Worten</summary>
-      <div className="two">
-        <input className="field" aria-label="Wunsch in Worten" placeholder="z. B. morgen ab 20 Uhr OmU" value={text} onChange={(e) => { setText(e.target.value); setR(null) }} maxLength={300} />
-        <button className="btn" disabled={!text.trim()} onClick={run}>Verstehen</button>
-      </div>
-      {r && !r.ok && <p className="stale" role="alert">Nicht verstanden. Die Filter unten funktionieren wie gewohnt.</p>}
-      {r?.ok && (
-        <div className="sub" role="status" aria-label="Erkannte Filter">
-          {Object.keys(r.filters).length ? <p>Erkannt: {Object.entries(r.filters).map(([k, v]) => shown(k, v)).join(' · ')}</p> : <p>Kein Filter erkannt.</p>}
-          {r.unresolved.map((u, i) => (
-            <p key={i}>Offen: „{u.text}“{u.candidates ? ' – ' : ' (bitte selbst einstellen)'}
-              {u.candidates?.map((c) => <button key={c} className="mini" onClick={() => apply({ ...r.filters, [u.field]: c })}>{shown(u.field, c)}</button>)}</p>
-          ))}
-          {r.ignored.length > 0 && <p>Nicht verwendet: {r.ignored.join(', ')}</p>}
-          {Object.keys(r.filters).length > 0 && <button className="btn primary" onClick={() => apply(r.filters)}>Übernehmen</button>}
-        </div>
-      )}
-    </details>
   )
 }
 
@@ -225,7 +193,6 @@ export default function Programm() {
       {program.data?.offline && (
         <p className="stale" role="status">Offline-Kopie, geladen {new Date(program.data.offline.savedAt).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })}. Änderungen seitdem fehlen.</p>
       )}
-      <Concierge onApply={(c) => { if (c.q) setQ(c.q); update(c) }} />
       <input className="field" type="search" aria-label="Film suchen" placeholder="Film suchen…" value={q} onChange={(e) => setQ(e.target.value)} />
       {dayGone && <p className="stale" role="status">Der gewählte Tag ist vorbei oder hat kein Programm. Gezeigt wird der nächste Tag; die übrigen Filter bleiben.</p>}
       {!searching && (
