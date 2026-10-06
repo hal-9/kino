@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { berlinYmd } from 'shared'
 import { api } from '../api.js'
 import { QueryError } from '../components/QueryStatus.jsx'
 
@@ -9,8 +10,11 @@ const day = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('de-DE', { day: 
 function tilesOf(r) {
   const t = (name, v, sub) => v != null && { name, value: v, sub }
   return [
-    t('Besuche', r.count),
-    t('Stunden im Kino', Math.round(r.minutes / 60)),
+    // K21: feste Bedeutungen (shared/stats.js).
+    r.scope === 'group' && t('Kinoabende', r.outings, r.ungrouped ? `${r.ungrouped} Besuch(e) ohne Buchung einzeln gezählt` : undefined),
+    t(r.scope === 'group' ? 'Personenbesuche' : 'Besuche', r.count, r.unconfirmed ? `davon ${r.unconfirmed} unbestätigt` : undefined),
+    t('Filme', r.films),
+    t('Filmstunden', String(r.person_hours).replace('.', ','), r.unknown_runtime ? `ohne Werbung · ${r.unknown_runtime} ohne bekannte Laufzeit` : 'ohne Werbung'),
     r.ov_share != null && t('OV-Anteil', `${Math.round(r.ov_share * 100)} %`),
     r.top_cinema && t('Lieblingskino', r.top_cinema.name, `${r.top_cinema.count}×`),
     r.top_auditorium && t('Lieblingssaal', r.top_auditorium.name.split(' · ').pop(), `${r.top_auditorium.name.split(' · ')[0]} · ${r.top_auditorium.count}×`),
@@ -86,7 +90,8 @@ async function share(r, tiles, title) {
 }
 
 export default function Wrapped() {
-  const [year, setYear] = useState(new Date().getFullYear())
+  const thisYear = Number(berlinYmd().slice(0, 4))
+  const [year, setYear] = useState(thisYear)
   const [scope, setScope] = useState('me')
   const query = useQuery({ queryKey: ['wrapped', year, scope], queryFn: () => api.get(`/stats/wrapped?year=${year}&scope=${scope}`) })
   const { data: r, isLoading } = query
@@ -98,7 +103,7 @@ export default function Wrapped() {
       <div className="chips-row">
         <button className="chip" onClick={() => setYear(year - 1)}>‹ {year - 1}</button>
         <button className="chip active" aria-current="true">{year}</button>
-        {year < new Date().getFullYear() && <button className="chip" onClick={() => setYear(year + 1)}>{year + 1} ›</button>}
+        {year < thisYear && <button className="chip" onClick={() => setYear(year + 1)}>{year + 1} ›</button>}
         <button className={`chip${scope === 'me' ? ' active' : ''}`} aria-pressed={scope === 'me'} onClick={() => setScope('me')}>Ich</button>
         <button className={`chip${scope === 'group' ? ' active' : ''}`} aria-pressed={scope === 'group'} onClick={() => setScope('group')}>Gruppe</button>
       </div>

@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { aggregateVisits, berlinYmd } from 'shared'
 import { requireAuth } from '../auth.js'
 import { materializeVisits } from '../autoVisits.js'
 
@@ -18,14 +19,19 @@ export function statsRouter(db) {
   router.use('/stats', requireAuth(db))
 
   router.get('/stats/wrapped', (req, res) => {
-    const year = String(req.query.year ?? new Date().getFullYear())
+    const year = String(req.query.year ?? berlinYmd().slice(0, 4))
     const scope = req.query.scope === 'group' ? 'group' : 'me'
     if (!/^\d{4}$/.test(year)) return res.status(422).json({ error: 'validation failed' })
 
     materializeVisits(db, req.user.householdId)
     const rows = db
       .prepare(
-        `SELECT v.*, m.runtime AS movie_runtime FROM visits v LEFT JOIN movies m ON m.id = v.movie_id
+        // watched_on ist ein Berliner Kalenderdatum → Jahr = Berliner Jahr. Verknüpfte Vorstellung: Screening der
+        // gebuchten Option, sonst die Buchung selbst; ohne Buchung ungruppiert.
+        `SELECT v.*, m.runtime AS movie_runtime,
+           CASE WHEN o.screening_id IS NOT NULL THEN 'screening:' || o.screening_id WHEN v.proposal_id IS NOT NULL THEN 'proposal:' || v.proposal_id END AS event_key
+         FROM visits v LEFT JOIN movies m ON m.id = v.movie_id
+           LEFT JOIN proposals p ON p.id = v.proposal_id LEFT JOIN proposal_options o ON o.id = p.booked_option_id
          WHERE substr(v.watched_on, 1, 4) = ? AND ${scope === 'me' ? 'v.user_id' : 'v.household_id'} = ?
          ORDER BY v.watched_on, v.id`
       )
@@ -37,11 +43,13 @@ export function statsRouter(db) {
     const first = rows[0]
     const last = rows.at(-1)
     const month = top(rows.map((v) => v.watched_on.slice(5, 7)))
+    // minutes = nur bekannte Laufzeiten (früher 120 min für unbekannte geschätzt); count = Personenbesuche.
+    const agg = aggregateVisits(rows.map((v) => ({ ...v, runtime: v.movie_runtime ?? v.s.runtime })))
     const out = {
       year: Number(year),
       scope,
-      count: rows.length,
-      minutes: rows.reduce((n, v) => n + (v.movie_runtime ?? v.s.runtime ?? 120), 0),
+      ...agg,
+      count: agg.person_visits,
       ov_share: withVersion.length ? withVersion.filter((v) => OV.has(v.s.version)).length / withVersion.length : null,
       top_cinema: top(rows.map((v) => v.s.cinema_name)),
       top_auditorium: top(rows.map((v) => v.auditorium && `${v.s.cinema_name} · ${v.auditorium}`)),
