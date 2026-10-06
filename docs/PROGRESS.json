@@ -799,5 +799,49 @@
     "next_ready": [
       "K14"
     ]
+  },
+  "K14": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "reproduced": {
+      "state": "Programm kept day/OV/favourites/search in component state only: lost on reload/navigation, not shareable, no back/forward",
+      "filters": "no earliest-start / latest-finish filter; OV filter was server-side so unknown-version shows silently disappeared instead of being labelled uncertain"
+    },
+    "commands": {
+      "npm test": "shared 28/28, backend 126/126, frontend 41/41; exit 0",
+      "npm run build": "exit 0"
+    },
+    "modified": [
+      "shared/filters.js (new: timeFit fit|out|unknown with cinema day ending 06:00, overnight limit, DST-safe instants via berlinIso, fold/gap limit -> unknown; versionFit; estimatedEnd; AD_MINUTES=20; isHm)",
+      "shared/filters.test.js (new), shared/index.js",
+      "frontend/src/screens/Programm.jsx (filters in URL: tag, q, ov, fav, ab, bis - validated; chips/day push history, typing/time inputs replace; expired tag falls back with notice keeping other filters; per-account versioned defaults in localStorage applied only when URL has no filter params and saved only on own changes; client-side hard filters with separate 'Unsicher' group; estimated end shown when latest-end filter is set; reset)",
+      "frontend/src/index.css (.time-filters, .unsure)",
+      "frontend/src/test/filters.test.jsx (new)"
+    ],
+    "migration_notes": "No schema change. Server /program version param still supported but no longer sent by the UI.",
+    "acceptance": {
+      "K14-AC01": "passed in jsdom (URL params applied, chip writes URL, back restores; reload/share = same URL). Real browser reload/share: not run",
+      "K14-AC02": "passed in jsdom (tag=2020-01-01 -> notice, first available day, ov and ab kept)",
+      "K14-AC03": "passed (shared: 22:00+140 min vs 23:30/00:30/00:15, 00:30 late show vs 03:00, autumn and spring DST via real instants, ambiguous limit -> unknown)",
+      "K14-AC04": "passed (unknown runtime with latest-end and unknown version with OV -> 'unknown', shown only in the separate uncertain group)",
+      "K14-AC05": "passed in jsdom (hiding a selected DF show via OV filter keeps it in the tray; filter controls are labelled native inputs/buttons)"
+    },
+    "decisions": [
+      "Cinema day ends at 06:00 for time filters (00:30 shows are 'late', limits before 06:00 mean the following night).",
+      "Estimated end = start + runtime + 20 min ads, same buffer as ICS/auto visits.",
+      "Defaults are per account id on this device (localStorage, versioned v1); opening a shared link does not overwrite them.",
+      "Time inputs replace the history entry (no entry per keystroke); chips and days push entries."
+    ],
+    "deferred": [
+      "precise audio/subtitle filters and 'German audio is not proof of dubbing' (needs K05-deferred audio/subtitle columns; version enum only today)",
+      "verified room/format filters (no structured format data beyond attrs)",
+      "server-side stored preferences (device-local only)"
+    ],
+    "gaps": [
+      "real browser back/forward/reload/share and mobile time input UX: not run"
+    ],
+    "next_ready": [
+      "K15"
+    ]
   }
 }

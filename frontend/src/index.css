@@ -439,3 +439,7 @@ textarea.field { min-height: 72px; resize: vertical; font-family: inherit; }
 .compare { list-style: none; margin: 0 0 8px; padding: 0; }
 .compare li { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
 .compare small { display: block; color: var(--muted); }
+/* K14: Zeitfilter und unsichere Treffer */
+.time-filters { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 4px 0 10px; font-size: 14px; color: var(--muted); }
+.time-filters input { margin-left: 6px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 4px 6px; }
+.unsure { margin: 10px 0 2px; font-size: 13px; color: var(--muted); }
