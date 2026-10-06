@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth } from '../auth.js'
+import { idempotent } from '../idempotency.js'
 import { eventForProposal, icsCalendar, publicUrl } from '../ics.js'
 
 const createSchema = z.object({
@@ -56,7 +57,7 @@ export function proposalsRouter(db) {
     res.json({ members, proposals: loadProposals(db, req.user.householdId) })
   })
 
-  router.post('/proposals', (req, res) => {
+  router.post('/proposals', idempotent(db, 'proposal.create'), (req, res) => {
     const parsed = createSchema.safeParse(req.body)
     if (!parsed.success) return res.status(422).json({ error: 'validation failed', details: parsed.error.issues })
     const { movie_id, screening_ids, note } = parsed.data

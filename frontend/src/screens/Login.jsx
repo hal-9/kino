@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { api } from '../api.js'
+import { api, errorText } from '../api.js'
 import Logo from '../components/Logo.jsx'
 
 export default function Login() {
@@ -20,8 +20,9 @@ export default function Login() {
       const me = await api.post('/login', { email, password })
       queryClient.setQueryData(['me'], me)
       navigate('/', { replace: true })
-    } catch {
-      setError('E-Mail oder Passwort stimmt nicht.')
+    } catch (err) {
+      // Nur 401 heißt falsche Zugangsdaten; Ausfall/429/500 nicht.
+      setError(err.status === 401 ? 'E-Mail oder Passwort stimmt nicht.' : err.status === 429 ? 'Zu viele Versuche. Bitte später erneut.' : errorText(err))
     } finally {
       setPending(false)
     }
@@ -37,7 +38,7 @@ export default function Login() {
           onChange={(e) => setEmail(e.target.value)} required />
         <input className="field" type="password" placeholder="Passwort" value={password} autoComplete="current-password"
           onChange={(e) => setPassword(e.target.value)} required />
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error" role="alert">{error}</p>}
         <button className="btn primary" type="submit" disabled={pending}>{pending ? 'Moment…' : 'Anmelden'}</button>
       </form>
       <p className="foot">Neu hier? <Link to="/registrieren">Mit Einladungscode registrieren</Link></p>

@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { api } from './api.js'
+import { api, errorText } from './api.js'
 import BottomNav from './components/BottomNav.jsx'
 import Header from './components/Header.jsx'
 import Login from './screens/Login.jsx'
@@ -16,9 +16,18 @@ function useMe() {
 }
 
 function Guard({ children }) {
-  const { data: me, isLoading, isError } = useMe()
+  const { data: me, isLoading, error, refetch } = useMe()
   if (isLoading) return <main className="center muted">Lädt…</main>
-  if (isError || !me) return <Navigate to="/login" replace />
+  // Nur ein echtes 401 von /me meldet ab; Ausfall/429/500 lässt die Sitzung in Ruhe.
+  if (error?.status === 401 || (!error && !me)) return <Navigate to="/login" replace />
+  if (error && !me) {
+    return (
+      <main className="center" role="alert">
+        <p>{errorText(error)}</p>
+        <button className="btn" onClick={() => refetch()}>Erneut versuchen</button>
+      </main>
+    )
+  }
   return (
     <>
       <Header me={me} />

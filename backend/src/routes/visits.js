@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { isValidYmd, normTitle } from 'shared'
 import { requireAuth } from '../auth.js'
+import { idempotent } from '../idempotency.js'
 import { materializeVisits } from '../autoVisits.js'
 
 const ymd = z.string().refine(isValidYmd)
@@ -83,7 +84,7 @@ export function visitsRouter(db) {
     res.json({ pending: rows.map((r) => ({ proposal_id: r.proposal_id, snapshot: JSON.parse(r.snapshot_json) })) })
   })
 
-  router.post('/visits', (req, res) => {
+  router.post('/visits', idempotent(db, 'visit.create'), (req, res) => {
     const parsed = createSchema.safeParse(req.body)
     if (!parsed.success) return res.status(422).json({ error: 'validation failed', details: parsed.error.issues })
     const d = parsed.data

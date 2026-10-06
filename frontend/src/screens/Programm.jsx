@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, berlinYmd } from 'shared'
-import { api } from '../api.js'
+import { api, errorText, newKey } from '../api.js'
+import { QueryError } from '../components/QueryStatus.jsx'
 import Sheet from '../components/Sheet.jsx'
 import MovieSheet from '../components/MovieSheet.jsx'
 import MovieHeader from '../components/MovieHeader.jsx'
@@ -60,12 +61,13 @@ export default function Programm() {
   const [ov, setOv] = useState(false)
   const [favOnly, setFavOnly] = useState(false)
   const [info, setInfo] = useState(null)
-  const [draft, setDraft] = useState(null) // { movie, screening }
+  const [draft, setDraft] = useState(null) // { movie, screening, key }
   const [note, setNote] = useState('')
   const navigate = useNavigate()
   const qc = useQueryClient()
   const create = useMutation({
-    mutationFn: () => api.post('/proposals', { movie_id: draft.movie.id, screening_ids: [draft.screening.id], note: note || undefined }),
+    // Ein Schlüssel je Entwurf: Wiederholung nach Fehler/Netzabbruch legt keinen zweiten Vorschlag an.
+    mutationFn: () => api.post('/proposals', { movie_id: draft.movie.id, screening_ids: [draft.screening.id], note: note || undefined }, { idempotencyKey: draft.key }),
     onSuccess: (p) => { qc.invalidateQueries({ queryKey: ['proposals'] }); setDraft(null); setNote(''); navigate(`/vorschlaege/${p.id}`) },
   })
 
@@ -112,10 +114,11 @@ export default function Programm() {
         <button className={`chip${favOnly ? ' active' : ''}`} onClick={() => setFavOnly(!favOnly)}>Nur Favoriten</button>
       </div>
       {program.isLoading && <p className="muted">Lädt…</p>}
+      <QueryError query={days.data ? program : days} label="Programm" />
       {program.data && movies.length === 0 && (
         <div className="empty"><h2>Nichts gefunden</h2><p>Programm reicht etwa zwei Wochen voraus.</p></div>
       )}
-      {movies.map((m) => <MovieCard key={m.id} movie={m} favOnly={favOnly} showDate={searching} onPropose={(movie, screening) => setDraft({ movie, screening })} onInfo={setInfo} />)}
+      {movies.map((m) => <MovieCard key={m.id} movie={m} favOnly={favOnly} showDate={searching} onPropose={(movie, screening) => setDraft({ movie, screening, key: newKey() })} onInfo={setInfo} />)}
       <MovieSheet movieId={info} onClose={() => setInfo(null)} />
       <Sheet open={draft != null} onClose={closeDraft}>
         {draft && (
@@ -124,7 +127,9 @@ export default function Programm() {
             <p className="sub">{dateShort(draft.screening.starts_at)} · {time(draft.screening.starts_at)} · {draft.screening.cinema_name}{draft.screening.version ? ` · ${draft.screening.version}` : ''}</p>
             <textarea className="field" placeholder="Notiz (optional)" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} />
             {create.isError && (
-              <p className="stale">{create.error.status === 409 ? 'Diese Vorstellung hat schon begonnen. Bitte eine andere wählen.' : 'Senden fehlgeschlagen. Bitte erneut versuchen.'}</p>
+              <p className="stale" role="alert">{create.error.code === 'expired' ? 'Diese Vorstellung hat schon begonnen. Bitte eine andere wählen.'
+                : create.error.code === 'idempotency key reused' ? 'Vielleicht schon gesendet. Bitte unter Vorschläge prüfen.'
+                : `Senden fehlgeschlagen. ${errorText(create.error)}`}</p>
             )}
             <div className="sheet-actions">
               <button className="btn" onClick={closeDraft}>Abbrechen</button>

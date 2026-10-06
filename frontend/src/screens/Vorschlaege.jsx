@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api.js'
+import { api, errorText } from '../api.js'
+import { MutationError, QueryError } from '../components/QueryStatus.jsx'
 import Sheet from '../components/Sheet.jsx'
 import MovieSheet from '../components/MovieSheet.jsx'
 import MovieHeader from '../components/MovieHeader.jsx'
@@ -23,7 +24,29 @@ function Proposal({ p, members, me }) {
   const [info, setInfo] = useState(false)
   const [ticketSheet, setTicketSheet] = useState(false)
   const refresh = () => qc.invalidateQueries({ queryKey: ['proposals'] })
-  const vote = useMutation({ mutationFn: ({ o, value }) => api.put(`/proposals/${p.id}/votes/${o}`, { value }), onSuccess: refresh })
+  // Stimmen je Option nacheinander senden, nur die jeweils neueste Absicht zählt: keine überholten Antworten,
+  // keine umgeordneten Requests am Server. intent zeigt die Absicht bis zur Bestätigung.
+  const [intent, setIntent] = useState({})
+  const [voteError, setVoteError] = useState(null)
+  const queue = useRef({})
+  async function castVote(o, value) {
+    setVoteError(null)
+    setIntent((x) => ({ ...x, [o]: value }))
+    const q = (queue.current[o] ??= { next: null, sending: false })
+    q.next = value
+    if (q.sending) return
+    q.sending = true
+    let failed = null
+    while (q.next) {
+      const v = q.next
+      q.next = null
+      try { await api.put(`/proposals/${p.id}/votes/${o}`, { value: v }) } catch (err) { failed = err; q.next = null }
+    }
+    q.sending = false
+    if (failed) setVoteError(failed)
+    await refresh()
+    if (!q.sending) setIntent((x) => { const { [o]: _, ...rest } = x; return rest })
+  }
   const book = useMutation({ mutationFn: (option_id) => api.post(`/proposals/${p.id}/book`, { option_id, ticket_link: link.trim() || undefined }), onSuccess: () => { setPick(null); setLink(''); refresh() } })
   const saveTicket = useMutation({ mutationFn: () => api.put(`/proposals/${p.id}/ticket`, { ticket_link: link.trim() || null }), onSuccess: () => { setTicketSheet(false); refresh() } })
   const cancel = useMutation({ mutationFn: () => api.post(`/proposals/${p.id}/cancel`), onSuccess: refresh })
@@ -41,7 +64,8 @@ function Proposal({ p, members, me }) {
         {p.note && <p className="note">{p.note}</p>}
         {p.options.map((o) => {
           const s = o.snapshot
-          const mine = o.votes[me.id]
+          const mine = intent[o.id] ?? o.votes[me.id]
+          const voteOf = (uid) => (uid === me.id ? mine : o.votes[uid])
           return (
             <div key={o.id} className={`opt${o.id === best?.id && score(o) > 0 ? ' best' : ''}${o.id === p.booked_option_id ? ' booked' : ''}`}>
               <div className="opt-head">
@@ -51,14 +75,14 @@ function Proposal({ p, members, me }) {
               <small className="muted">{[s.cinema_name, s.auditorium].filter(Boolean).join(' · ')}</small>
               <div className="opt-votes">
                 {members.map((m) => (
-                  <span key={m.id} className={`avatar v-${o.votes[m.id] ?? 'none'}`} title={`${m.name}: ${o.votes[m.id] ?? 'offen'}`}>
-                    {initial(m.name)}<i>{MARK[o.votes[m.id]] ?? ''}</i>
+                  <span key={m.id} className={`avatar v-${voteOf(m.id) ?? 'none'}`} title={`${m.name}: ${voteOf(m.id) ?? 'offen'}`}>
+                    {initial(m.name)}<i>{MARK[voteOf(m.id)] ?? ''}</i>
                   </span>
                 ))}
                 {p.status === 'open' && (
                   <span className="tri">
                     {['yes', 'maybe', 'no'].map((v) => (
-                      <button key={v} className={mine === v ? `on ${v}` : ''} onClick={() => vote.mutate({ o: o.id, value: v })}>{MARK[v]}</button>
+                      <button key={v} className={mine === v ? `on ${v}` : ''} onClick={() => castVote(o.id, v)}>{MARK[v]}</button>
                     ))}
                   </span>
                 )}
@@ -67,6 +91,8 @@ function Proposal({ p, members, me }) {
           )
         })}
       </div>
+      {voteError && <p className="stale" role="alert">Stimme nicht gespeichert. {errorText(voteError)}</p>}
+      <MutationError mutation={cancel} />
       <div className="sheet-actions">
         {p.status === 'open' && (
           <>
@@ -99,6 +125,7 @@ function Proposal({ p, members, me }) {
           ))}
         </div>
         <input className="field" type="url" placeholder="Ticket-Link aus der Bestätigungs-Mail (optional)" value={link} onChange={(e) => setLink(e.target.value)} />
+        <MutationError mutation={book} text={(e) => (e.code === 'expired' ? 'Diese Vorstellung hat schon begonnen.' : errorText(e))} />
         <div className="sheet-actions">
           <button className="btn" onClick={() => setPick(null)}>Abbrechen</button>
           <button className="btn primary" onClick={() => book.mutate(pick)} disabled={book.isPending}>Als gebucht speichern</button>
@@ -109,6 +136,7 @@ function Proposal({ p, members, me }) {
         <h3>Ticket-Link</h3>
         <p className="sub">Link zu den gekauften Tickets (Wallet, PDF oder Bestätigungsseite). Er landet im Kalendereintrag.</p>
         <input className="field" type="url" placeholder="https://…" value={link} onChange={(e) => setLink(e.target.value)} />
+        <MutationError mutation={saveTicket} />
         <div className="sheet-actions">
           <button className="btn" onClick={() => setTicketSheet(false)}>Abbrechen</button>
           <button className="btn primary" disabled={saveTicket.isPending} onClick={() => saveTicket.mutate()}>Speichern</button>
@@ -119,6 +147,7 @@ function Proposal({ p, members, me }) {
         <h3>Kalender abonnieren</h3>
         <p className="sub">Einmal abonnieren reicht: alle künftigen Buchungen erscheinen automatisch. Auf dem iPhone öffnet der Link den Abo-Dialog.</p>
         {cal.data && <a className="btn primary" href={cal.data.webcal_url}>In Kalender öffnen</a>}
+        <QueryError query={cal} label="Kalender-Links" />
       </Sheet>
     </section>
   )
@@ -127,12 +156,14 @@ function Proposal({ p, members, me }) {
 export default function Vorschlaege() {
   const { id } = useParams()
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: () => api.get('/me') })
-  const { data, isLoading } = useQuery({ queryKey: ['proposals'], queryFn: () => api.get('/proposals'), refetchInterval: 10_000 })
-  if (!data && !isLoading) return <p className="muted">Vorschläge konnten nicht geladen werden.</p>
-  if (isLoading || !me) return <p className="muted">Lädt…</p>
+  const proposals = useQuery({ queryKey: ['proposals'], queryFn: () => api.get('/proposals'), refetchInterval: 10_000 })
+  const { data } = proposals
+  if (!data) return proposals.isError ? <QueryError query={proposals} label="Vorschläge" /> : <p className="muted">Lädt…</p>
+  if (!me) return <p className="muted">Lädt…</p>
   const list = data.proposals.filter((p) => !id || p.id === Number(id))
   return (
     <>
+      <QueryError query={proposals} label="Vorschläge" />
       {id && <Link className="link-btn" to="/vorschlaege">← Alle Vorschläge</Link>}
       {list.length === 0 && (
         <div className="empty"><h2>Noch nichts vorgeschlagen</h2><p>Im Programm bei einer Vorstellung auf „Vorschlagen“ tippen.</p></div>

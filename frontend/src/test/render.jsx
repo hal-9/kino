@@ -1,7 +1,8 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { createQueryClient } from '../queryClient.js'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -21,7 +22,7 @@ export async function renderScreen(element, { path = '/', route = '/' } = {}) {
   const el = document.createElement('div')
   document.body.appendChild(el)
   const root = createRoot(el)
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const client = createQueryClient({ retry: false })
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
@@ -31,7 +32,7 @@ export async function renderScreen(element, { path = '/', route = '/' } = {}) {
       </QueryClientProvider>
     )
   })
-  return { el, unmount: () => act(() => root.unmount()) }
+  return { el, client, unmount: () => act(() => root.unmount()) }
 }
 
 // Wartet, bis cond() wahr ist (Query-Auflösung).

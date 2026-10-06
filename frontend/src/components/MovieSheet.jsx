@@ -1,14 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api.js'
+import { QueryError } from './QueryStatus.jsx'
 import Sheet from './Sheet.jsx'
 
 const fmtDate = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' }) : null)
 
 // Film-Details (TMDB, serverseitig gecacht). movieId = null → geschlossen.
 export default function MovieSheet({ movieId, onClose }) {
-  const { data: m, isLoading } = useQuery({
+  const query = useQuery({
     queryKey: ['movie', movieId], queryFn: () => api.get(`/movies/${movieId}`), enabled: movieId != null, staleTime: 3_600_000,
   })
+  const { data: m, isLoading } = query
   const facts = m && [
     ['Kinostart', fmtDate(m.release_date)],
     ['Regie', m.director],
@@ -19,6 +21,7 @@ export default function MovieSheet({ movieId, onClose }) {
   return (
     <Sheet open={movieId != null} onClose={onClose}>
       {isLoading && <p className="muted">Lädt…</p>}
+      <QueryError query={query} label="Film-Details" />
       {m && (
         <>
           <div className="movie-head">

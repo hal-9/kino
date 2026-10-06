@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { api } from '../api.js'
+import { api, errorText } from '../api.js'
 import Logo from '../components/Logo.jsx'
 
 const MESSAGES = {
@@ -28,7 +28,7 @@ export default function Register() {
       queryClient.setQueryData(['me'], me)
       navigate('/', { replace: true })
     } catch (err) {
-      setError(MESSAGES[err.message] || 'Das hat nicht geklappt.')
+      setError(MESSAGES[err.code] || (err.status === 429 ? 'Zu viele Versuche. Bitte später erneut.' : errorText(err)))
     } finally {
       setPending(false)
     }
@@ -44,7 +44,7 @@ export default function Register() {
         <input className="field" type="email" placeholder="E-Mail" value={form.email} onChange={set('email')} autoComplete="email" required />
         <input className="field" type="password" placeholder="Passwort (mind. 8 Zeichen)" value={form.password} onChange={set('password')} autoComplete="new-password" required minLength={8} />
         <input className="field" placeholder="Einladungscode" value={form.invite_code} onChange={set('invite_code')} autoComplete="off" required />
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error" role="alert">{error}</p>}
         <button className="btn primary" type="submit" disabled={pending}>{pending ? 'Moment…' : 'Registrieren'}</button>
       </form>
       <p className="foot">Schon dabei? <Link to="/login">Anmelden</Link></p>

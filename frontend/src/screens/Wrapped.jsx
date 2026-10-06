@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api.js'
+import { QueryError } from '../components/QueryStatus.jsx'
 
 const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 const day = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })
@@ -87,7 +88,8 @@ async function share(r, tiles, title) {
 export default function Wrapped() {
   const [year, setYear] = useState(new Date().getFullYear())
   const [scope, setScope] = useState('me')
-  const { data: r, isLoading } = useQuery({ queryKey: ['wrapped', year, scope], queryFn: () => api.get(`/stats/wrapped?year=${year}&scope=${scope}`) })
+  const query = useQuery({ queryKey: ['wrapped', year, scope], queryFn: () => api.get(`/stats/wrapped?year=${year}&scope=${scope}`) })
+  const { data: r, isLoading } = query
   const tiles = r ? tilesOf(r) : []
   const title = scope === 'me' ? `Mein Kinojahr ${year}` : `Unser Kinojahr ${year}`
 
@@ -101,6 +103,7 @@ export default function Wrapped() {
         <button className={`chip${scope === 'group' ? ' active' : ''}`} onClick={() => setScope('group')}>Gruppe</button>
       </div>
       {isLoading && <p className="muted">Lädt…</p>}
+      <QueryError query={query} label="Statistiken" />
       {r?.count === 0 && <div className="empty"><h2>Keine Besuche {year}</h2><p>Trag Kinobesuche ein, dann erscheint hier deine Statistik.</p></div>}
       {tiles.length > 0 && (
         <>

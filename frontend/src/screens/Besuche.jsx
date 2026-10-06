@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { berlinYmd, parseOrderText } from 'shared'
-import { api } from '../api.js'
+import { api, newKey } from '../api.js'
+import { MutationError, QueryError } from '../components/QueryStatus.jsx'
 import Sheet from '../components/Sheet.jsx'
 
 const today = () => berlinYmd()
@@ -23,8 +24,10 @@ function VisitSheet({ open, onClose, members, me, init, visit }) {
   const qc = useQueryClient()
   const cinemas = useQuery({ queryKey: ['cinemas'], queryFn: () => api.get('/cinemas'), enabled: open, staleTime: 3_600_000 })
   const [f, setF] = useState({})
+  const [key, setKey] = useState(null)
   useEffect(() => {
     if (!open) return
+    setKey(newKey())
     const s = visit?.snapshot ?? init?.snapshot
     setF({
       title: s?.title ?? '', year: s?.year ?? '', cinema_key: s?.cinema_key ?? '',
@@ -41,8 +44,8 @@ function VisitSheet({ open, onClose, members, me, init, visit }) {
     mutationFn: () => {
       const body = { watched_on: f.watched_on, auditorium: f.auditorium || null, row: f.row || null, seats: f.seats || null, companions: f.companions, note: f.note || null }
       if (visit) return api.patch(`/visits/${visit.id}`, body)
-      if (init?.proposal_id) return api.post('/visits', { ...body, proposal_id: init.proposal_id })
-      return api.post('/visits', { ...body, title: f.title, year: f.year ? Number(f.year) : null, cinema_key: f.cinema_key })
+      if (init?.proposal_id) return api.post('/visits', { ...body, proposal_id: init.proposal_id }, { idempotencyKey: key })
+      return api.post('/visits', { ...body, title: f.title, year: f.year ? Number(f.year) : null, cinema_key: f.cinema_key }, { idempotencyKey: key })
     },
     onSuccess: done,
   })
@@ -79,6 +82,8 @@ function VisitSheet({ open, onClose, members, me, init, visit }) {
         ))}
       </div>
       <input className="field" placeholder="Notiz" value={f.note ?? ''} onChange={set('note')} maxLength={500} />
+      <MutationError mutation={save} />
+      <MutationError mutation={del} />
       <div className="sheet-actions">
         {visit && <button className="btn danger" onClick={() => confirm('Besuch löschen?') && del.mutate()}>Löschen</button>}
         <button className="btn" onClick={onClose}>Abbrechen</button>
@@ -111,7 +116,8 @@ export default function Besuche() {
     }
   }, [params, pending.data])
 
-  if (!me || !visits.data) return <p className="muted">Lädt…</p>
+  if (!visits.data) return visits.isError ? <QueryError query={visits} label="Besuche" /> : <p className="muted">Lädt…</p>
+  if (!me) return <p className="muted">Lädt…</p>
   const { members, visits: list } = visits.data
   const name = (uid) => members.find((m) => m.id === uid)?.name
   const close = () => { setSheet(null); if (id || params.get('proposal')) { setParams({}); history.replaceState(null, '', '/besuche') } }
@@ -131,6 +137,7 @@ export default function Besuche() {
           </div>
         </section>
       )}
+      <QueryError query={visits} label="Besuche" />
       <button className="btn primary" style={{ width: '100%', marginBottom: 16 }} onClick={() => setSheet({})}>+ Besuch eintragen</button>
       {list.length === 0 && <div className="empty"><h2>Noch keine Besuche</h2></div>}
       {list.map((v) => {
