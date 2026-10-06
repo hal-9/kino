@@ -5,6 +5,7 @@ import { authRouter } from './routes/auth.js'
 import { programRouter } from './routes/program.js'
 import { proposalsRouter } from './routes/proposals.js'
 import { visitsRouter } from './routes/visits.js'
+import { statsRouter } from './routes/stats.js'
 import { calendarRouter } from './routes/calendar.js'
 
 export function createApp(db, _deps = {}) {
@@ -34,6 +35,7 @@ export function createApp(db, _deps = {}) {
   app.use('/api', programRouter(db))
   app.use('/api', proposalsRouter(db))
   app.use('/api', visitsRouter(db))
+  app.use('/api', statsRouter(db))
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }))
   app.use((err, req, res, next) => {

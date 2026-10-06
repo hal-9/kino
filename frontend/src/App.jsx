@@ -8,6 +8,7 @@ import Register from './screens/Register.jsx'
 import Programm from './screens/Programm.jsx'
 import Vorschlaege from './screens/Vorschlaege.jsx'
 import Besuche from './screens/Besuche.jsx'
+import Wrapped from './screens/Wrapped.jsx'
 import Einstellungen from './screens/Einstellungen.jsx'
 
 function useMe() {
@@ -27,8 +28,6 @@ function Guard({ children }) {
   )
 }
 
-const Soon = ({ m }) => <div className="empty"><h2>Kommt in {m}</h2></div>
-
 export default function App() {
   return (
     <Routes>
@@ -40,7 +39,7 @@ export default function App() {
       <Route path="/einstellungen" element={<Guard><Einstellungen /></Guard>} />
       <Route path="/besuche" element={<Guard><Besuche /></Guard>} />
       <Route path="/besuche/:id" element={<Guard><Besuche /></Guard>} />
-      <Route path="/wrapped" element={<Guard><Soon m="M4" /></Guard>} />
+      <Route path="/wrapped" element={<Guard><Wrapped /></Guard>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
