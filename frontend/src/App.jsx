@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, errorText } from './api.js'
 import BottomNav from './components/BottomNav.jsx'
@@ -11,6 +12,7 @@ import Besuche from './screens/Besuche.jsx'
 import Wrapped from './screens/Wrapped.jsx'
 import Einstellungen from './screens/Einstellungen.jsx'
 import { loginPath } from './lib/returnTo.js'
+import { claimOfflineData, useOnline } from './lib/offline.js'
 
 function useMe() {
   return useQuery({ queryKey: ['me'], queryFn: () => api.get('/me'), retry: false })
@@ -19,22 +21,37 @@ function useMe() {
 function Guard({ children }) {
   const { data: me, isLoading, error, refetch } = useMe()
   const location = useLocation()
+  const online = useOnline()
+  useEffect(() => { if (me) claimOfflineData(me.id) }, [me?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  const banner = !online && (
+    <p className="stale" role="status">Offline: nur Lesen. Abstimmen, Vorschlagen und Buchen werden nicht gespeichert und nicht später automatisch gesendet.</p>
+  )
   if (isLoading) return <main className="center muted">Lädt…</main>
   // Nur ein echtes 401 von /me meldet ab; Ausfall/429/500 lässt die Sitzung in Ruhe.
   // Ziel merken (nur geprüfte interne Route), damit ein geteilter Link nach dem Login wieder öffnet.
   if (error?.status === 401 || (!error && !me)) return <Navigate to={loginPath(location)} replace />
+  // K23: ohne Verbindung (status 0) bleibt das Programm (Offline-Kopie) lesbar; private Seiten haben keine Kopie.
+  if (error?.status === 0 && !me && location.pathname === '/') {
+    return (
+      <>
+        <main className="shell">{banner || <p className="stale" role="status">Keine Verbindung zum Server.</p>}{children}</main>
+        <BottomNav />
+      </>
+    )
+  }
   if (error && !me) {
     return (
       <main className="center" role="alert">
         <p>{errorText(error)}</p>
         <button className="btn" onClick={() => refetch()}>Erneut versuchen</button>
+        {error.status === 0 && <Link className="link-btn" to="/">Programm (Offline-Kopie) ansehen</Link>}
       </main>
     )
   }
   return (
     <>
       <Header me={me} />
-      <main className="shell">{children}</main>
+      <main className="shell">{banner}{children}</main>
       <BottomNav />
     </>
   )

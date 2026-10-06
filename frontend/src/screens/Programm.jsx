@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AD_MINUTES, addDays, berlinYmd, estimatedEnd, isHm, isValidYmd, timeFit, versionFit } from 'shared'
 import { api, errorText, newKey } from '../api.js'
 import { QueryError } from '../components/QueryStatus.jsx'
+import { cachedGet } from '../lib/offline.js'
 import Sheet from '../components/Sheet.jsx'
 import MovieSheet from '../components/MovieSheet.jsx'
 import MovieHeader from '../components/MovieHeader.jsx'
@@ -94,7 +95,8 @@ export default function Programm() {
     ab: isHm(sp.get('ab')) ? sp.get('ab') : '',
     bis: isHm(sp.get('bis')) ? sp.get('bis') : '',
   }
-  const { data: me } = useQuery({ queryKey: ['me'], queryFn: () => api.get('/me') })
+  // retryOnMount: false – offline (Guard zeigt das Programm ohne /me) kein Neu-Laden-Kreislauf beim Einhängen.
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: () => api.get('/me'), retryOnMount: false })
   // replace = kein eigener Verlaufseintrag (Tippen); Chips/Tage erzeugen Einträge für Zurück/Vor.
   // Nur eigene Änderungen werden zum Standard; ein geöffneter geteilter Link überschreibt ihn nicht.
   const update = (changes, replace = false, save = true) => {
@@ -162,7 +164,7 @@ export default function Programm() {
   // Zurück/Vor ändert q in der URL → Eingabefeld folgt.
   useEffect(() => setQ((cur) => (cur.trim() === f.q ? cur : f.q)), [f.q])
 
-  const days = useQuery({ queryKey: ['days'], queryFn: () => api.get('/program/days'), refetchInterval: 60_000 })
+  const days = useQuery({ queryKey: ['days'], queryFn: () => cachedGet('/program/days'), refetchInterval: 60_000 })
   const sources = useQuery({ queryKey: ['sources'], queryFn: () => api.get('/sources'), refetchInterval: 60_000 })
   const dayList = days.data?.days ?? []
   // Abgelaufener/unbekannter Tag aus URL oder Lesezeichen: erster verfügbarer Tag, übrige Filter bleiben.
@@ -175,7 +177,7 @@ export default function Programm() {
   else if (activeDay) params.set('date', activeDay)
   const program = useQuery({
     queryKey: ['program', params.toString()],
-    queryFn: () => api.get(`/program?${params}`),
+    queryFn: () => cachedGet(`/program?${params}`),
     enabled: searching || Boolean(activeDay),
     refetchInterval: 60_000,
   })
@@ -194,6 +196,9 @@ export default function Programm() {
   return (
     <>
       {stale.length > 0 && <p className="stale">⚠ Veraltet: {stale.map((s) => s.source).join(', ')}</p>}
+      {program.data?.offline && (
+        <p className="stale" role="status">Offline-Kopie, geladen {new Date(program.data.offline.savedAt).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })}. Änderungen seitdem fehlen.</p>
+      )}
       <input className="field" type="search" aria-label="Film suchen" placeholder="Film suchen…" value={q} onChange={(e) => setQ(e.target.value)} />
       {dayGone && <p className="stale" role="status">Der gewählte Tag ist vorbei oder hat kein Programm. Gezeigt wird der nächste Tag; die übrigen Filter bleiben.</p>}
       {!searching && (

@@ -11,7 +11,9 @@ export function createQueryClient(defaults = {}) {
     queryCache: new QueryCache({ onError }),
     mutationCache: new MutationCache({ onError: (err) => onError(err) }),
     defaultOptions: {
-      queries: { retry: (n, err) => n < 1 && !(err?.status >= 400 && err?.status < 500), staleTime: 5_000, ...defaults },
+      // K23: networkMode 'always' – offline nichts pausieren und nichts später still nachsenden; Fehler sofort sichtbar.
+      queries: { networkMode: 'always', retry: (n, err) => n < 1 && !(err?.status >= 400 && err?.status < 500), staleTime: 5_000, ...defaults },
+      mutations: { networkMode: 'always' },
     },
   })
   return client

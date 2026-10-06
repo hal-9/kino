@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { api, errorText } from '../api.js'
 import { QueryError } from '../components/QueryStatus.jsx'
 import CalendarLink from '../components/CalendarLink.jsx'
+import { clearOfflineData } from '../lib/offline.js'
 
 const stale = (s) => !s.last_ok_at || Date.now() - new Date(s.last_ok_at) > 36 * 3600_000
 
@@ -45,6 +46,7 @@ export default function Einstellungen() {
   async function logout() {
     await api.post('/logout').catch(() => {})
     qc.clear()
+    clearOfflineData()
     navigate('/login', { replace: true })
   }
 
