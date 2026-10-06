@@ -145,3 +145,15 @@ describe('Backup und Wiederherstellung (K25-AC01/AC02)', () => {
     expect(v3.stderr).toMatch(/schema_migrations/)
   })
 })
+
+describe('K16-AC04: Detail-Link fremder Haushalt', () => {
+  it('Einzelabruf und Archiv geben nichts preis', async () => {
+    const { app, eve, c2, p } = await world()
+    const r = await request(app).get(`/api/proposals/${p.id}`).set('Cookie', eve)
+    expect(r.status).toBe(404)
+    expect(JSON.stringify(r.body)).not.toMatch(/Geheimfilm|privat|qr-abc|tuncay|kim/)
+    expect(JSON.stringify((await request(app).get('/api/proposals?view=archive').set('Cookie', eve)).body)).not.toContain('Geheimfilm')
+    expect((await request(app).get(`/api/proposals/${p.id}`).set('Cookie', c2)).status).toBe(200)
+    expect((await request(app).get(`/api/proposals/${p.id}`)).status).toBe(401)
+  })
+})

@@ -887,5 +887,50 @@
     "next_ready": [
       "K16"
     ]
+  },
+  "K16": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "reproduced": {
+      "login return": "Guard redirected /me 401 to plain /login and Login always navigated to '/': a shared /vorschlaege/:id link was lost after login",
+      "detail": "already fixed in K11 (dedicated GET /proposals/:id, neutral 404 view)",
+      "share": "no share action existed; users copied the browser URL by hand"
+    },
+    "commands": {
+      "npm test": "shared 28/28, backend 130/130, frontend 55/55; exit 0",
+      "npm run build": "exit 0"
+    },
+    "modified": [
+      "frontend/src/lib/returnTo.js + returnTo.test.js (new: allowlisted internal routes only; raw and decoded form checked for backslash (0x5c), control chars, '//' ; login/registrieren never a target)",
+      "frontend/src/App.jsx (Guard: only /me 401 -> /login?next=<validated current route>)",
+      "frontend/src/screens/Login.jsx (after success navigate to validated next, else '/')",
+      "frontend/src/screens/Vorschlaege.jsx ('Link teilen': navigator.share with app link + short summary; AbortError silent; clipboard fallback; manual read-only field when both fail)",
+      "frontend/src/index.css (.share-row)",
+      "frontend/src/test/links.test.jsx (new)",
+      "backend/test/security.test.js (K16-AC04 cross-household detail/archive)"
+    ],
+    "migration_notes": "No schema change.",
+    "acceptance": {
+      "K16-AC01": "passed in jsdom (App at /vorschlaege/5 with /me 401 -> /login?next=%2Fvorschlaege%2F5 -> submit -> /vorschlaege/5 detail loaded)",
+      "K16-AC02": "passed (K11 tests: old-created future booking listed and detail 200; ended >60 d only in archive, detail still 200)",
+      "K16-AC03": "passed (unit: absolute, protocol-relative, backslash, %2F%2F, %5C, %0A, javascript:, login loop, dot segments, fragments, overlong, malformed encoding -> '/'; jsdom: next=%2F%2Fevil.example -> not followed)",
+      "K16-AC04": "passed (other household: detail 404 without title/note/ticket/names, archive empty, unauthenticated 401)",
+      "K16-AC05": "passed in jsdom (shared payload = app URL + title/count only, no ticket/feed/note; cancel shows nothing; clipboard failure -> manual field). Real iOS share sheet: not run"
+    },
+    "decisions": [
+      "Return-to uses an allowlist of app routes rather than a generic URL parser (react-router open-redirect advisory noted in K25).",
+      "Share text excludes the proposal note (may be personal) and all ticket/feed URLs.",
+      "Register keeps navigating to '/' (no next pass-through) - new accounts rarely arrive via deep link."
+    ],
+    "deferred": [
+      "next pass-through via the registration link",
+      "clearing the K13 sessionStorage draft on logout/account switch"
+    ],
+    "gaps": [
+      "real browser/iOS share sheet and clipboard permission behaviour: not run"
+    ],
+    "next_ready": [
+      "K17"
+    ]
   }
 }

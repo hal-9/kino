@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, errorText } from './api.js'
 import BottomNav from './components/BottomNav.jsx'
@@ -10,6 +10,7 @@ import Vorschlaege from './screens/Vorschlaege.jsx'
 import Besuche from './screens/Besuche.jsx'
 import Wrapped from './screens/Wrapped.jsx'
 import Einstellungen from './screens/Einstellungen.jsx'
+import { loginPath } from './lib/returnTo.js'
 
 function useMe() {
   return useQuery({ queryKey: ['me'], queryFn: () => api.get('/me'), retry: false })
@@ -17,9 +18,11 @@ function useMe() {
 
 function Guard({ children }) {
   const { data: me, isLoading, error, refetch } = useMe()
+  const location = useLocation()
   if (isLoading) return <main className="center muted">Lädt…</main>
   // Nur ein echtes 401 von /me meldet ab; Ausfall/429/500 lässt die Sitzung in Ruhe.
-  if (error?.status === 401 || (!error && !me)) return <Navigate to="/login" replace />
+  // Ziel merken (nur geprüfte interne Route), damit ein geteilter Link nach dem Login wieder öffnet.
+  if (error?.status === 401 || (!error && !me)) return <Navigate to={loginPath(location)} replace />
   if (error && !me) {
     return (
       <main className="center" role="alert">

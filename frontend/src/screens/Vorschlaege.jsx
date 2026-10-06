@@ -123,6 +123,17 @@ function Proposal({ p, members, me, history }) {
   function confirmReopen() {
     if (confirm('Wieder öffnen? Die Buchung wird aufgehoben, Stimmen bleiben erhalten.')) { fresh(); reopen.mutate() }
   }
+  // K16: nur den App-Link und eine knappe Zusammenfassung teilen, nie Ticket- oder Kalender-Links.
+  const [shared, setShared] = useState(null)
+  async function share() {
+    const url = `${window.location.origin}/vorschlaege/${p.id}`
+    const text = `${p.movie.title}: ${p.status === 'booked' ? 'gebucht' : `${p.options.length} ${p.options.length === 1 ? 'Termin' : 'Termine'} zur Abstimmung`}`
+    setShared(null)
+    if (navigator.share) {
+      try { await navigator.share({ title: `Kino: ${p.movie.title}`, text, url }); return } catch (e) { if (e?.name === 'AbortError') return }
+    }
+    try { await navigator.clipboard.writeText(url); setShared({ ok: 'Link kopiert.' }) } catch { setShared({ manual: url }) }
+  }
   const openPick = () => { fresh(); book.reset(); setPick(p.booked_option_id ?? best?.id ?? p.options[0].id) }
 
   const best = p.status === 'open' ? [...p.options].sort((a, b) => score(b) - score(a))[0] : null
@@ -207,6 +218,17 @@ function Proposal({ p, members, me, history }) {
         )}
         {p.status === 'cancelled' && <button className="btn" disabled={reopen.isPending} onClick={confirmReopen}>Wieder öffnen</button>}
       </div>
+
+      <div className="share-row">
+        <button className="link-btn" onClick={share}>Link teilen</button>
+        {shared?.ok && <span className="sub" role="status">{shared.ok}</span>}
+      </div>
+      {shared?.manual && (
+        <>
+          <p className="sub" role="status">Kopieren nicht möglich. Link bitte manuell kopieren:</p>
+          <input className="field" readOnly aria-label="Link zum Vorschlag" value={shared.manual} onFocus={(e) => e.target.select()} />
+        </>
+      )}
 
       <MovieSheet movieId={info ? p.movie.id : null} onClose={() => setInfo(false)} />
 

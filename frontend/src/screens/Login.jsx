@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { api, errorText } from '../api.js'
 import Logo from '../components/Logo.jsx'
+import { safeReturnTo } from '../lib/returnTo.js'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -10,6 +11,7 @@ export default function Login() {
   const [error, setError] = useState(null)
   const [pending, setPending] = useState(false)
   const navigate = useNavigate()
+  const [params] = useSearchParams()
   const queryClient = useQueryClient()
 
   async function submit(e) {
@@ -19,7 +21,7 @@ export default function Login() {
     try {
       const me = await api.post('/login', { email, password })
       queryClient.setQueryData(['me'], me)
-      navigate('/', { replace: true })
+      navigate(safeReturnTo(params.get('next')), { replace: true })
     } catch (err) {
       // Nur 401 heißt falsche Zugangsdaten; Ausfall/429/500 nicht.
       setError(err.status === 401 ? 'E-Mail oder Passwort stimmt nicht.' : err.status === 429 ? 'Zu viele Versuche. Bitte später erneut.' : errorText(err))
