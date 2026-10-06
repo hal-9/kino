@@ -6,6 +6,7 @@ import { MutationError, QueryError } from '../components/QueryStatus.jsx'
 import Sheet from '../components/Sheet.jsx'
 import MovieSheet from '../components/MovieSheet.jsx'
 import MovieHeader from '../components/MovieHeader.jsx'
+import CalendarLink from '../components/CalendarLink.jsx'
 import { initial } from '../components/Header.jsx'
 
 const MARK = { yes: '✓', maybe: '?', no: '✗' }
@@ -51,7 +52,6 @@ function Proposal({ p, members, me }) {
   const book = useMutation({ mutationFn: (option_id) => api.post(`/proposals/${p.id}/book`, { option_id, ticket_link: link.trim() || undefined }), onSuccess: () => { setPick(null); setLink(''); refresh() } })
   const saveTicket = useMutation({ mutationFn: () => api.put(`/proposals/${p.id}/ticket`, { ticket_link: link.trim() || null }), onSuccess: () => { setTicketSheet(false); refresh() } })
   const cancel = useMutation({ mutationFn: () => api.post(`/proposals/${p.id}/cancel`), onSuccess: refresh })
-  const cal = useQuery({ queryKey: ['cal'], queryFn: () => api.get('/cal/token'), enabled: abo })
 
   const best = p.status === 'open' ? [...p.options].sort((a, b) => score(b) - score(a))[0] : null
   const booked = p.options.find((o) => o.id === p.booked_option_id)
@@ -147,8 +147,7 @@ function Proposal({ p, members, me }) {
       <Sheet open={abo} onClose={() => setAbo(false)} label="Kalender abonnieren">
         <h3>Kalender abonnieren</h3>
         <p className="sub">Einmal abonnieren reicht: alle künftigen Buchungen erscheinen automatisch. Auf dem iPhone öffnet der Link den Abo-Dialog.</p>
-        {cal.data && <a className="btn primary" href={cal.data.webcal_url}>In Kalender öffnen</a>}
-        <QueryError query={cal} label="Kalender-Links" />
+        <CalendarLink />
       </Sheet>
     </section>
   )

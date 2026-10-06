@@ -56,7 +56,8 @@ export function icsCalendar(events, { name = 'LiLief-Kino' } = {}) {
 export const publicUrl = (req) => process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`
 
 // Gebuchter Vorschlag → VEVENT (Daten aus dem eingefrorenen Snapshot).
-export function eventForProposal(db, proposalId, base) {
+// tickets = false: kein Ticket-/Einlass-Link (Standard für neue Abo-Feeds).
+export function eventForProposal(db, proposalId, base, { tickets = true } = {}) {
   const p = db.prepare('SELECT * FROM proposals WHERE id = ? AND status = ? AND booked_option_id IS NOT NULL').get(proposalId, 'booked')
   if (!p) return null
   const opt = db.prepare('SELECT * FROM proposal_options WHERE id = ?').get(p.booked_option_id)
@@ -66,6 +67,7 @@ export function eventForProposal(db, proposalId, base) {
     .all(opt.id).map((r) => r.name)
   const start = new Date(s.starts_at)
   const link = `${base}/vorschlaege/${p.id}`
+  const ticket = tickets ? p.ticket_link : null
   const place = [s.cinema_name, s.street, [s.zip, 'Berlin'].filter(Boolean).join(' ')].filter(Boolean).join(', ')
   return icsEvent({
     uid: `proposal-${p.id}@kino.tunikb.com`,
@@ -76,7 +78,7 @@ export function eventForProposal(db, proposalId, base) {
     location: place,
     geo: s.lat != null && s.lng != null ? `${s.lat};${s.lng}` : null,
     // Kein Kauf-Link: nach der Buchung zählt nur der Link zu den echten Tickets.
-    description: [s.auditorium, who.length && `dabei: ${who.join(', ')}`, p.ticket_link && `Tickets: ${p.ticket_link}`].filter(Boolean).join(' · '),
-    url: p.ticket_link || link,
+    description: [s.auditorium, who.length && `dabei: ${who.join(', ')}`, ticket && `Tickets: ${ticket}`].filter(Boolean).join(' · '),
+    url: ticket || link,
   })
 }

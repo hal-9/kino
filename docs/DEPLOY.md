@@ -154,6 +154,16 @@ Jede Seite wird für sich geholt, geprüft und atomar veröffentlicht (Upload al
 - `GET /api/healthz` = Prozess lebt, `GET /api/readyz` = DB lesbar (503 sonst). Beide öffentlich und ohne
   Details; Quellen-Zeitpunkte und Fehler nur angemeldet unter `/api/sources`.
 
+## Kalender-Links (ab Migration 011)
+
+- Der Link in den Einstellungen ist eine Inhaber-Berechtigung für alle gebuchten Termine des Haushalts.
+- Neue Links liegen nur als SHA-256 in `cal_tokens` und werden nur direkt nach dem Erzeugen angezeigt.
+  Standard: ohne Ticket-Links (Opt-in per Checkbox).
+- Bestehende Alt-Links (Klartext, `hashed = 0`) laufen unverändert weiter, inkl. Ticket-Links, bis der Nutzer
+  „Neuen Link erzeugen“ oder „Link widerrufen“ tippt. Kein stilles Abklemmen laufender Abos.
+- Nach Rotation ist der alte Link sofort ungültig (404). Kalender-Dienste behalten bereits geladene Termine;
+  das lässt sich serverseitig nicht zurückholen. UIDs (`proposal-<id>@…`) bleiben gleich.
+
 ## Später: Update ausrollen
 
 ```bash

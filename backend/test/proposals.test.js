@@ -98,9 +98,9 @@ describe('Vorschläge + Kalender', () => {
   it('Feed: Token ohne Cookie → 200, falsches Token → 404, enthält gebuchte', async () => {
     const p = (await create()).body
     await request(app).post(`/api/proposals/${p.id}/book`).set('Cookie', c1).send({ option_id: p.options[0].id })
-    const tok = (await request(app).get('/api/cal/token').set('Cookie', c2)).body
-    expect(tok.webcal_url).toMatch(/^webcal:\/\/.+\/api\/cal\/[0-9a-f]{32}\.ics$/)
-    const feed = await request(app).get(`/api/cal/${tok.token}.ics`)
+    const tok = (await request(app).post('/api/cal/token').set('Cookie', c2)).body
+    expect(tok.webcal_url).toMatch(/^webcal:\/\/.+\/api\/cal\/[0-9a-f]{64}\.ics$/)
+    const feed = await request(app).get(tok.https_url.replace(/^https?:\/\/[^/]+/, ''))
     expect(feed.status).toBe(200)
     expect(feed.text).toContain('BEGIN:VEVENT')
     expect((await request(app).get('/api/cal/deadbeef.ics')).status).toBe(404)
