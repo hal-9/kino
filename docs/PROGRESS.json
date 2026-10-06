@@ -1351,5 +1351,50 @@
       "K27",
       "K37"
     ]
+  },
+  "K27": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "scope": "Watchlist (own interest per movie, optional expiry), explicit hard/soft planning preferences, dated manual availability, visibility control; Planen screen + Merken button. No calendar/location/travel APIs.",
+    "commands": {
+      "npm test": "shared 39/39, backend 159/159, frontend 78/78; exit 0",
+      "npm run build": "exit 0"
+    },
+    "modified": [
+      "backend/migrations/020_watchlist_preferences.sql (new: watchlist, planning_prefs, availability)",
+      "backend/src/routes/planning.js (new: GET/PUT/DELETE /watchlist[/:movieId], GET /planning, PUT/DELETE /planning/prefs, POST/DELETE /planning/availability)",
+      "backend/src/routes/movies.js (watchlisted flag for the requesting user)",
+      "backend/src/app.js (mount planningRouter)",
+      "shared/planning.js (new: localRange Berlin date+HH:mm -> UTC instants, overnight end next day, DST gap/fold -> null), shared/planning.test.js, shared/index.js",
+      "frontend/src/screens/Planen.jsx (new: Merkliste, Vorlieben muss/lieber, Zeiten), frontend/src/App.jsx (/planen), frontend/src/components/BottomNav.jsx (5th tab), frontend/src/index.css (5 nav columns)",
+      "frontend/src/components/MovieSheet.jsx (Merken toggle)",
+      "backend/test/planning.test.js (new), frontend/src/test/planen.test.jsx (new)"
+    ],
+    "migration_notes": "020 additive (three new tables, no data rewrite). Fresh install via all tests; populated upgrade from 019 tested (planning.test.js), foreign_key_check/integrity_check ok.",
+    "acceptance": {
+      "K27-AC01": "passed (movie without screenings watchlisted, screenings count unchanged, upcoming=0 shown as 'Zurzeit keine Vorstellungen')",
+      "K27-AC02": "passed (watchlist add/remove/expiry leaves votes, status, booked option and revision byte-identical)",
+      "K27-AC03": "passed (22:00-01:30 ends next day; 02:30 on 2026-10-25 fold and 2026-03-29 gap rejected 422 / null; invalid date 422; past range 422; expired ranges dropped on read; watchlist expires_on -> expired)",
+      "K27-AC04": "passed (empty prefs all null = unknown; other members see prefs only with visibility=household, otherwise name only; other household sees nothing; unknown keys rejected 422; reset clears prefs+availability)",
+      "K27-AC05": "passed (separate table, no vote/booking rows created; proposal votes unchanged after another member watchlists)"
+    },
+    "decisions": [
+      "Interest is per local movie id (verified local film identity); free-text titles cannot be watchlisted (no fake movie rows).",
+      "Preferences limited to data that exists: version (ov/df) and cinemas with hard/soft strength, earliest start and latest end (always hard), personal buffer minutes. Missing value = no statement (unknown), never 'anything goes'.",
+      "Availability is stored as UTC instants from Berlin wall time; end <= start means next day; ambiguous DST times are rejected, not shifted.",
+      "visibility fit_only (default): other members only ever receive derived fit (K28), never raw preferences or schedule; availability is never shown to others.",
+      "Intended participants are chosen per matching request (K28), not stored."
+    ],
+    "deferred": [
+      "room/format preferences (no structured room/format data; same gap as K14)",
+      "audio/subtitle language split (version enum only)",
+      "watchlisting films not yet in the movies table"
+    ],
+    "gaps": [
+      "real browser/mobile check of the Planen screen and 5-tab navigation: not run"
+    ],
+    "next_ready": [
+      "K28"
+    ]
   }
 }

@@ -12,6 +12,10 @@ const TABS = [
     icon: <svg viewBox="0 0 24 24" {...stroke}><path d="M9 12l2 2 4-4" /><rect x="4" y="4" width="16" height="16" rx="3" /></svg>,
   },
   {
+    to: '/planen', label: 'Planen',
+    icon: <svg viewBox="0 0 24 24" {...stroke}><path d="M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.6-7 10-7 10z" /></svg>,
+  },
+  {
     to: '/besuche', label: 'Besuche',
     icon: <svg viewBox="0 0 24 24" {...stroke}><path d="M3 9a2 2 0 0 0 0 6v3h18v-3a2 2 0 0 0 0-6V6H3z" /><path d="M13 6v12" strokeDasharray="2 2" /></svg>,
   },

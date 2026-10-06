@@ -11,6 +11,7 @@ import Vorschlaege from './screens/Vorschlaege.jsx'
 import Besuche from './screens/Besuche.jsx'
 import Wrapped from './screens/Wrapped.jsx'
 import Einstellungen from './screens/Einstellungen.jsx'
+import Planen from './screens/Planen.jsx'
 import { loginPath } from './lib/returnTo.js'
 import { claimOfflineData, useOnline } from './lib/offline.js'
 
@@ -69,6 +70,7 @@ export default function App() {
       <Route path="/besuche" element={<Guard><Besuche /></Guard>} />
       <Route path="/besuche/:id" element={<Guard><Besuche /></Guard>} />
       <Route path="/wrapped" element={<Guard><Wrapped /></Guard>} />
+      <Route path="/planen" element={<Guard><Planen /></Guard>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
