@@ -62,6 +62,7 @@ describe('Adapter', () => {
     expect(rows.length).toBeGreaterThan(5)
     expect(rows.every((r) => r.cinemaKey === 'zoo-palast' && typeof r.auditorium === 'string')).toBe(true)
     expect(new Set(rows.map((r) => r.version))).toContain('DF')
+    expect(rows.every((r) => r.capacity === 'available' && !r.attrs.includes('fast ausverkauft'))).toBe(true) // Fixture: workload < 80
   })
 
   it('uci: Version aus data-version, Saal, Ticketlink dekodiert', () => {

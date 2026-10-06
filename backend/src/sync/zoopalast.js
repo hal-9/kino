@@ -26,7 +26,9 @@ export async function fetchShows(ctx) {
       year: mv?.year ?? null,
       version: lang ? versionFromLanguages(lang[1].trim(), lang[2]?.trim()) : null,
       auditorium: auds.get(p.auditoriumId) ?? null,
-      attrs: p.workload >= 80 ? ['fast ausverkauft'] : [],
+      attrs: [],
+      // Auslastung ist flüchtig: eigenes Feld statt Attribut; fehlende Angabe = unbekannt.
+      capacity: p.workload == null ? null : p.workload >= 80 ? 'nearly_sold_out' : 'available',
       ticketUrl: `https://zoopalast.premiumkino.de/film/${p.slug}`,
       source: 'zoopalast',
       sourceId: p.id,

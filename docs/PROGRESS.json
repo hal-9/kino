@@ -226,5 +226,49 @@
     "next_ready": [
       "K05"
     ]
+  },
+  "K05": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "reproduced": {
+      "F07": "zoopalast attrs [fast ausverkauft] then [] for same event -> screening attrs kept the badge (attrs union), reproduced via temporary test against K04 source",
+      "base-only correction (secondary claim)": "kinoheld-only event OV then DF -> screening stayed OV (base pick o ?? n); reproduced"
+    },
+    "commands": {
+      "npm test": "shared 23/23, backend 62/62, frontend 4/4; exit 0",
+      "populated upgrade 001-004 -> 007 on dev.db copy": "counts/ids/snapshots unchanged, observed_at backfilled for all 6915 observations, foreign_key_check 0, integrity ok"
+    },
+    "modified": [
+      "backend/migrations/007_field_provenance.sql (observation observed_at/capacity/capacity_at; screenings capacity/capacity_at/provenance_json; screening_changes; strips legacy fast-ausverkauft attr)",
+      "backend/src/sync/index.js (refreshScreening derives version/auditorium/ticket_url/attrs/capacity from active observations: tier overlay>kinoheld, newest capture, source name; per-field provenance; logs changes of known material values; observation upsert ignores older captures; capturedAt from adapter result)",
+      "backend/src/sync/zoopalast.js (capacity field instead of attr; missing workload = unknown)",
+      "backend/src/routes/program.js (capacity with 24h TTL, badge derived at read time, capacity exposed)",
+      "backend/test/provenance.test.js",
+      "backend/test/sync.test.js"
+    ],
+    "acceptance": {
+      "K05-AC01": "passed",
+      "K05-AC02": "passed (omitted -> capacity null; stale >24h -> unknown)",
+      "K05-AC03": "passed (kinoheld-only OV->DF applies; change row + provenance recorded)",
+      "K05-AC04": "passed (capture older than stored observation does not overwrite)",
+      "K05-AC05": "passed (kinoheld/zoopalast in either order -> identical screening; replay adds no change rows)"
+    },
+    "decisions": [
+      "Field precedence: any non-kinoheld source (house/overlay) over kinoheld; ties by newest observed_at then source name.",
+      "Stable attrs = sorted union over active observations (each observation replaced on re-observation, so same-source removals take effect).",
+      "Capacity TTL 24h at read time (sync every 12h).",
+      "Language detail (audio/subtitle/original) beyond existing version enum not split - see deferred."
+    ],
+    "deferred": [
+      "separate audio_language / subtitle_language / original-audio columns and raw provider evidence retention (version enum unchanged)",
+      "explicit-cleared vs omitted for non-capacity fields (null still means unknown for version/auditorium)",
+      "UI for screening_changes / provenance (stored only)"
+    ],
+    "gaps": [
+      "live zoopalast workload semantics (is >=80 really near sold out?): not verified against provider"
+    ],
+    "next_ready": [
+      "K06"
+    ]
   }
 }

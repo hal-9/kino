@@ -86,7 +86,41 @@ export function pickMovie(candidates, year) {
   return yearless ? { id: yearless.id } : null
 }
 
-function mergeRows(db, rows) {
+// Basis (kinoheld, Ketten-Aggregator) zuerst geladen, Häuser/Overlays gehen bei Feldwerten vor.
+const TIER = { kinoheld: 0 }
+const tier = (source) => TIER[source] ?? 1
+const MATERIAL = ['version', 'auditorium']
+
+// Felder einer Vorstellung aus ihren aktiven Beobachtungen ableiten: Rang (Overlay vor Basis), dann neuester
+// Capture, dann Quellname. Unabhängig von Import-Reihenfolge; Herkunft je Feld, materielle Änderungen protokolliert.
+// Auslastung: neueste Beobachtung einer Quelle, die Auslastung meldet (null = unbekannt, nicht „frei“).
+function refreshScreening(db, id, now) {
+  const obs = db.prepare('SELECT * FROM screening_observations WHERE screening_id = ? AND withdrawn_at IS NULL').all(id)
+  if (!obs.length) return
+  obs.sort((a, b) => tier(b.source) - tier(a.source) || b.observed_at.localeCompare(a.observed_at) || a.source.localeCompare(b.source))
+  const prov = {}
+  const next = {}
+  for (const f of ['version', 'auditorium', 'ticket_url']) {
+    const o = obs.find((x) => x[f] != null)
+    next[f] = o?.[f] ?? null
+    if (o) prov[f] = { source: o.source, observed_at: o.observed_at }
+  }
+  const cap = obs.filter((o) => o.capacity_at).sort((a, b) => b.capacity_at.localeCompare(a.capacity_at))[0]
+  if (cap) prov.capacity = { source: cap.source, observed_at: cap.capacity_at }
+  const old = db.prepare('SELECT * FROM screenings WHERE id = ?').get(id)
+  const logChange = db.prepare('INSERT INTO screening_changes (screening_id, field, old_value, new_value, source, changed_at) VALUES (?, ?, ?, ?, ?, ?)')
+  // Nur Änderungen eines bekannten Werts sind Korrekturen; Auffüllen von unbekannt nicht.
+  for (const f of MATERIAL) if (old[f] != null && old[f] !== next[f] && old.provenance_json) logChange.run(id, f, old[f], next[f], prov[f]?.source ?? null, now)
+  db.prepare(
+    `UPDATE screenings SET version = ?, auditorium = ?, ticket_url = ?, attrs_json = ?, capacity = ?, capacity_at = ?,
+       provenance_json = ?, last_seen_at = ?, withdrawn_at = NULL WHERE id = ?`
+  ).run(
+    next.version, next.auditorium, next.ticket_url, JSON.stringify([...new Set(obs.flatMap((o) => JSON.parse(o.attrs_json)))].sort()),
+    cap?.capacity ?? null, cap?.capacity_at ?? null, JSON.stringify(prov), now, id
+  )
+}
+
+function mergeRows(db, rows, observedAt) {
   db.function('norm_title', { deterministic: true }, (t) => (t == null ? null : normTitle(t)))
   const byNorm = db.prepare('SELECT id, year FROM movies WHERE norm_title = ? ORDER BY id')
   const byAlias = db.prepare('SELECT id, year FROM movies WHERE tmdb_id IS NOT NULL AND norm_title(title_original) = ? ORDER BY id')
@@ -108,21 +142,23 @@ function mergeRows(db, rows) {
     `INSERT INTO screenings (cinema_key, movie_id, starts_at, version, auditorium, attrs_json, ticket_url, source, source_id)
      VALUES (@cinemaKey, @movieId, @startsAt, @version, @auditorium, @attrs, @ticketUrl, @source, @sourceId)`
   )
-  const updShow = db.prepare(
-    `UPDATE screenings SET version = @version, auditorium = @auditorium, attrs_json = @attrs, ticket_url = @ticketUrl,
-       last_seen_at = datetime('now'), withdrawn_at = NULL WHERE id = @id`
-  )
   const observe = db.prepare(
-    `INSERT INTO screening_observations (screening_id, source, source_key, cinema_key, title, year, starts_at, version, auditorium, attrs_json, ticket_url, runtime)
-     VALUES (@screeningId, @source, @key, @cinemaKey, @title, @year, @startsAt, @version, @auditorium, @attrs, @ticketUrl, @runtime)
+    `INSERT INTO screening_observations (screening_id, source, source_key, cinema_key, title, year, starts_at, version, auditorium,
+       attrs_json, ticket_url, runtime, capacity, capacity_at, observed_at, first_seen_at, last_seen_at)
+     VALUES (@screeningId, @source, @key, @cinemaKey, @title, @year, @startsAt, @version, @auditorium,
+       @attrs, @ticketUrl, @runtime, @capacity, @capacityAt, @observedAt, @observedAt, @observedAt)
      ON CONFLICT (source, source_key) DO UPDATE SET screening_id = excluded.screening_id, cinema_key = excluded.cinema_key,
        title = excluded.title, year = excluded.year, starts_at = excluded.starts_at, version = excluded.version,
        auditorium = excluded.auditorium, attrs_json = excluded.attrs_json, ticket_url = excluded.ticket_url,
-       runtime = excluded.runtime, last_seen_at = datetime('now'), missing_count = 0, missing_since = NULL, withdrawn_at = NULL
+       runtime = excluded.runtime, capacity = excluded.capacity, capacity_at = excluded.capacity_at,
+       observed_at = excluded.observed_at, last_seen_at = excluded.observed_at, missing_count = 0, missing_since = NULL, withdrawn_at = NULL
+     WHERE excluded.observed_at >= screening_observations.observed_at -- ältere Captures drehen nichts zurück
      RETURNING id`
   )
+  const obsId = db.prepare('SELECT id FROM screening_observations WHERE source = ? AND source_key = ?')
   const movieCache = new Map()
   const seen = new Set() // IDs der in diesem Lauf beobachteten screening_observations
+  const touched = new Set() // Vorstellungen, deren Felder neu abzuleiten sind
 
   function movieId(row) {
     const norm = normTitle(row.title)
@@ -151,17 +187,14 @@ function mergeRows(db, rows) {
         old = sid && byId.get(sid)
       }
       const screeningId = old ? old.id : Number(insShow.run({ ...row, movieId: id, attrs }).lastInsertRowid)
-      seen.add(observe.get({ ...row, screeningId, key, attrs }).id)
-      if (!old) continue
-      const base = row.source === 'kinoheld' // Basis überschreibt nie Overlay-Werte
-      const pick = (o, n) => (base ? (o ?? n) : (n ?? o))
-      updShow.run({
-        id: old.id, version: pick(old.version, row.version), auditorium: pick(old.auditorium, row.auditorium),
-        attrs: JSON.stringify([...new Set([...JSON.parse(old.attrs_json), ...row.attrs])]), ticketUrl: pick(old.ticket_url, row.ticketUrl),
-      })
+      // capacity undefined = Quelle meldet keine Auslastung; null = gemeldet, aber unbekannt.
+      const capacity = row.capacity === undefined ? { capacity: null, capacityAt: null } : { capacity: row.capacity, capacityAt: observedAt }
+      const o = observe.get({ ...row, ...capacity, screeningId, key, attrs, observedAt })
+      seen.add(o?.id ?? obsId.get(row.source, key).id)
+      touched.add(screeningId)
     }
   })()
-  return seen
+  return { seen, touched }
 }
 
 // Mindestabstand zwischen erster und bestätigender Abwesenheit (Sync läuft alle 12 h, Mac-Inbox öfter).
@@ -187,30 +220,35 @@ function retireMissing(db, source, coverage, seen, now) {
     `UPDATE screenings SET withdrawn_at = ? WHERE id = ? AND withdrawn_at IS NULL
        AND NOT EXISTS (SELECT 1 FROM screening_observations WHERE screening_id = ? AND withdrawn_at IS NULL)`
   )
+  const changed = []
   for (const o of scoped) {
     if (seen.has(o.id)) continue
     miss.run(now, o.id)
-    if (withdraw.run(now, o.id, now).changes) retire.run(now, o.screening_id, o.screening_id)
+    if (!withdraw.run(now, o.id, now).changes) continue
+    if (!retire.run(now, o.screening_id, o.screening_id).changes) changed.push(o.screening_id)
   }
+  return changed
 }
 
 // Ein Quell-Import ist eine Transaktion: Daten, Rückzüge und Erfolgszeitpunkte gemeinsam oder gar nicht.
 // last_ok_at = letzter erfolgreicher (auch teilweiser) Import; last_complete_import_at nur mit vollständigem Scope.
-function importSource(db, source, rows, coverage, now) {
+function importSource(db, source, rows, coverage, now, capturedAt = now) {
   const digest = crypto.createHash('sha256').update(JSON.stringify(rows)).digest('hex')
   db.transaction(() => {
-    const seen = mergeRows(db, rows)
+    const { seen, touched } = mergeRows(db, rows, capturedAt)
     const prev = db.prepare('SELECT last_digest FROM source_health WHERE source = ?').get(source)
     // Derselbe Inhalt erneut (z. B. Cache-Replay) ist keine neue Abwesenheitsbeobachtung.
     const fresh = coverage && prev?.last_digest !== digest
-    if (fresh) retireMissing(db, source, coverage, seen, now)
+    // Noch aktiv beobachtete Vorstellungen, deren Beobachtung dieser Quelle zurückgezogen wurde, neu ableiten.
+    if (fresh) for (const id of retireMissing(db, source, coverage, seen, now)) touched.add(id)
+    for (const id of touched) refreshScreening(db, id, now)
     db.prepare(
       `INSERT INTO source_health (source, last_ok_at, last_count, last_error, last_attempt_at, last_captured_at, last_complete_import_at, last_digest)
-       VALUES (@source, @now, @count, NULL, @now, @now, @complete, @digest)
+       VALUES (@source, @now, @count, NULL, @now, @capturedAt, @complete, @digest)
        ON CONFLICT (source) DO UPDATE SET last_ok_at = @now, last_count = @count, last_error = NULL, last_attempt_at = @now,
-         last_captured_at = @now, last_complete_import_at = COALESCE(@complete, last_complete_import_at),
+         last_captured_at = @capturedAt, last_complete_import_at = COALESCE(@complete, last_complete_import_at),
          last_digest = COALESCE(@digest, last_digest)`
-    ).run({ source, now, count: rows.length, complete: coverage ? now : null, digest: fresh ? digest : null })
+    ).run({ source, now, capturedAt, count: rows.length, complete: coverage ? now : null, digest: fresh ? digest : null })
   })()
 }
 
@@ -268,12 +306,13 @@ export async function runSync(db, { fetch = createFetch(), log = console.log, ad
       try {
         // Adapter liefern Zeilen oder { rows, coverage }; coverage = vollständig gemeldeter Scope { cinemas, from, to }.
         const res = await mod.fetchShows(ctx)
-        const { rows: fetched, coverage = null } = Array.isArray(res) ? { rows: res } : res
+        // capturedAt: Zeitpunkt, zu dem die Quelle die Daten geliefert hat (z. B. Alter einer Inbox-Datei).
+        const { rows: fetched, coverage = null, capturedAt = now } = Array.isArray(res) ? { rows: res } : res
         // Unaufgelöste Ortszeiten (DST-Lücke/-Doppelstunde, ungültige Daten) nicht raten, sondern verwerfen.
         const r = fetched.filter((x) => x.startsAt)
         if (r.length < fetched.length) log(`${name}: ${fetched.length - r.length} Vorstellungen ohne eindeutige Zeit verworfen`)
         if (r.length < minRows(mod)) throw new Error(`nur ${r.length} Vorstellungen (erwartet ≥ ${minRows(mod)})`)
-        importSource(db, name, r, r.length < fetched.length ? null : coverage, now)
+        importSource(db, name, r, r.length < fetched.length ? null : coverage, now, capturedAt)
         total += r.length
         ok.push(name)
         log(`${name}: ok ${r.length}${coverage ? ' (vollständig)' : ''}`)

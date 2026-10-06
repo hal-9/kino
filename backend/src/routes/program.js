@@ -4,6 +4,14 @@ import { requireAuth } from '../auth.js'
 
 const VERSIONS = { ov: ['OV', 'OmU', 'OmeU'], df: ['DF'] }
 
+// Auslastungsangaben älter als 24 h (Sync alle 12 h) gelten als unbekannt.
+const CAPACITY_TTL_MS = 24 * 3600_000
+function capacityOf(r, now) {
+  const capacity = r.capacity_at && now - Date.parse(r.capacity_at) < CAPACITY_TTL_MS ? r.capacity : null
+  const attrs = JSON.parse(r.attrs_json)
+  return { capacity, attrs: capacity === 'nearly_sold_out' ? [...attrs, 'fast ausverkauft'] : attrs }
+}
+
 export function programRouter(db) {
   const router = Router()
   router.use(requireAuth(db))
@@ -32,7 +40,7 @@ export function programRouter(db) {
     const rows = db
       .prepare(
         `SELECT s.id, s.cinema_key, c.name AS cinema_name, c.is_favorite, s.starts_at, s.version, s.auditorium, a.seats,
-                s.attrs_json, s.ticket_url, m.id AS movie_id, m.title, m.year, m.runtime, m.poster_url
+                s.attrs_json, s.ticket_url, s.capacity, s.capacity_at, m.id AS movie_id, m.title, m.year, m.runtime, m.poster_url
          FROM screenings s JOIN movies m ON m.id = s.movie_id JOIN cinemas c ON c.key = s.cinema_key
          LEFT JOIN auditoriums a ON a.cinema_key = s.cinema_key AND a.name = s.auditorium
          WHERE ${where.join(' AND ')} ORDER BY s.starts_at LIMIT 6000`
@@ -47,7 +55,7 @@ export function programRouter(db) {
       movies.get(r.movie_id).screenings.push({
         id: r.id, cinema_key: r.cinema_key, cinema_name: r.cinema_name, is_favorite: Boolean(r.is_favorite),
         starts_at: r.starts_at, version: r.version, auditorium: r.auditorium, seats: r.seats,
-        attrs: JSON.parse(r.attrs_json), ticket_url: r.ticket_url,
+        ...capacityOf(r, now), ticket_url: r.ticket_url,
       })
     }
     const list = [...movies.values()]
