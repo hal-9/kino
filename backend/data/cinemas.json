@@ -1,0 +1,14 @@
+[
+  { "key": "delphi-lux", "name": "Delphi LUX", "chain": "yorck", "kinoheld_id": 2118, "is_favorite": true,
+    "aliases": ["delphi LUX", "Delphi LUX"], "sources": { "yorck": "delphi LUX" },
+    "auditoriums": [ { "name": "Kino 1" }, { "name": "Kino 2" }, { "name": "Kino 3" }, { "name": "Kino 4" }, { "name": "Kino 5" }, { "name": "Kino 6" }, { "name": "Kino 7" } ] },
+  { "key": "zoo-palast", "name": "Zoo Palast", "chain": "premiumkino", "kinoheld_id": 1328, "is_favorite": true,
+    "aliases": ["Zoo Palast"], "sources": { "zoopalast": true }, "auditoriums": [] },
+  { "key": "cineplex-alhambra", "name": "Cineplex Alhambra", "chain": "cineplex", "kinoheld_id": 317, "is_favorite": true,
+    "aliases": ["Cineplex Alhambra", "Alhambra"], "sources": { "berlinde": 34187 }, "auditoriums": [] },
+  { "key": "uci-mercedes-platz", "name": "UCI Luxe Mercedes Platz", "chain": "uci", "kinoheld_id": 2213, "is_favorite": true,
+    "aliases": ["UCI Kinowelt Berlin - Mercedes Platz | Luxe", "Berlin - East Side Gallery | Luxe"],
+    "sources": { "uci": { "slug": "berlin-mercedes-platz", "id": 82 } }, "auditoriums": [] },
+  { "key": "city-kino-wedding", "name": "City Kino Wedding", "chain": null, "kinoheld_id": 3305, "is_favorite": true,
+    "aliases": ["City Kino Wedding Berlin", "City Kino Wedding Berlin alt"], "sources": {}, "auditoriums": [] }
+]

@@ -1,0 +1,32 @@
+# Teilt sich den Caddy des workout-app-Stacks (der besitzt 80/443). Dieser
+# Stack liefert nur die API und hängt sich ins bestehende Netz.
+#
+# `name:` und der Service-Name MÜSSEN sich von workout ("deploy"/"api"),
+# dienstplan, diary und einkauf unterscheiden: alle Deploy-Ordner heißen "deploy/",
+# ohne eigenes `name:` ersetzt Compose fremde Container (Vorfall 2026-08-27).
+# Der Service-Name wird DNS-Alias im geteilten Netz, muss also eindeutig sein.
+name: kino
+
+services:
+  kino-api:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    # Nicht als root: uid 1000 = tuncay auf dem VPS, dem /opt/kino/data gehoert.
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - /opt/kino/data:/data
+    env_file:
+      - .env
+    networks:
+      - deploy_default
+
+networks:
+  deploy_default:
+    external: true
