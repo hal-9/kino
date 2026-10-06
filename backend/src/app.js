@@ -5,10 +5,11 @@ import { authRouter } from './routes/auth.js'
 import { programRouter } from './routes/program.js'
 import { proposalsRouter } from './routes/proposals.js'
 import { visitsRouter } from './routes/visits.js'
+import { moviesRouter } from './routes/movies.js'
 import { statsRouter } from './routes/stats.js'
 import { calendarRouter } from './routes/calendar.js'
 
-export function createApp(db, _deps = {}) {
+export function createApp(db, deps = {}) {
   const app = express()
   // Genau ein Proxy-Hop (Caddy), sonst zaehlt das Rate-Limit die Proxy-IP.
   app.set('trust proxy', 1)
@@ -36,6 +37,7 @@ export function createApp(db, _deps = {}) {
   app.use('/api', proposalsRouter(db))
   app.use('/api', visitsRouter(db))
   app.use('/api', statsRouter(db))
+  app.use('/api', moviesRouter(db, deps))
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }))
   app.use((err, req, res, next) => {

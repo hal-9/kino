@@ -378,7 +378,6 @@ a.show:active, button.show:active { background: var(--surface2); }
 .tri button { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-weight: 800; font-size: 15px; }
 .tri button.on { color: var(--on-primary); border-color: transparent; }
 .tri button.on.yes { background: var(--primary); } .tri button.on.maybe { background: var(--accent); } .tri button.on.no { background: var(--danger); }
-.pickbar { position: fixed; left: 16px; right: 16px; max-width: 528px; margin: 0 auto; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 12px); z-index: 20; box-shadow: var(--shadow); }
 .show.sel { background: var(--primary-dim); }
 .check-box { width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--line); display: grid; place-items: center; font-size: 14px; color: var(--on-primary); flex: none; }
 .show.sel .check-box { background: var(--primary); border-color: var(--primary); }
@@ -389,3 +388,21 @@ textarea.field { min-height: 72px; resize: vertical; font-family: inherit; }
 .stars { color: var(--accent); font-size: 18px; letter-spacing: 2px; margin-top: 4px; }
 .card.pad p { margin-bottom: 2px; }
 .sheet .field { margin-bottom: 10px; }
+
+/* Programm: Vorstellungs-Zeilen mit Aktionen, Film-Details */
+.slot { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.slot:last-child { border-bottom: 0; }
+.slot-top { display: flex; align-items: center; gap: 12px; }
+.slot-actions { display: flex; gap: 8px; margin-top: 10px; padding-left: 60px; }
+.mini { height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; text-decoration: none; }
+.mini.primary { background: var(--primary-dim); color: var(--primary); border-color: transparent; }
+.mini:active { transform: scale(0.97); }
+.title-btn { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: left; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+.title-btn::after { content: ' ⓘ'; opacity: 0.5; }
+.movie-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 12px; }
+.movie-poster { width: 96px; border-radius: 10px; flex: none; box-shadow: var(--shadow); }
+.movie-overview { font-size: 14px; line-height: 1.5; margin-bottom: 12px; }
+.facts { display: grid; gap: 8px; margin: 0; }
+.facts div { display: grid; grid-template-columns: 96px 1fr; gap: 8px; font-size: 14px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; }

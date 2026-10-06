@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api.js'
 import Sheet from '../components/Sheet.jsx'
+import MovieSheet from '../components/MovieSheet.jsx'
 import { initial } from '../components/Header.jsx'
 
 const MARK = { yes: '✓', maybe: '?', no: '✗' }
@@ -18,6 +19,7 @@ function Proposal({ p, members, me }) {
   const [pick, setPick] = useState(null)
   const [abo, setAbo] = useState(false)
   const [link, setLink] = useState('')
+  const [info, setInfo] = useState(false)
   const [ticketSheet, setTicketSheet] = useState(false)
   const refresh = () => qc.invalidateQueries({ queryKey: ['proposals'] })
   const vote = useMutation({ mutationFn: ({ o, value }) => api.put(`/proposals/${p.id}/votes/${o}`, { value }), onSuccess: refresh })
@@ -33,7 +35,7 @@ function Proposal({ p, members, me }) {
   return (
     <section className="group">
       <h2 className="group-title">
-        {p.movie.title}
+        <button className="title-btn" onClick={() => setInfo(true)}>{p.movie.title}</button>
         <span className="n">{p.status === 'booked' ? '✓ gebucht' : 'offen'}</span>
       </h2>
       <div className="card">
@@ -86,6 +88,8 @@ function Proposal({ p, members, me }) {
         )}
       </div>
 
+      <MovieSheet movieId={info ? p.movie.id : null} onClose={() => setInfo(false)} />
+
       <Sheet open={pick != null} onClose={() => setPick(null)}>
         <h3>Welche Vorstellung ist gebucht?</h3>
         <div className="cat-grid" style={{ gridTemplateColumns: '1fr' }}>
@@ -131,7 +135,7 @@ export default function Vorschlaege() {
     <>
       {id && <Link className="link-btn" to="/vorschlaege">← Alle Vorschläge</Link>}
       {list.length === 0 && (
-        <div className="empty"><h2>Noch nichts vorgeschlagen</h2><p>Im Programm „Vorschlagen“ bei einem Film tippen und 2–5 Vorstellungen wählen.</p></div>
+        <div className="empty"><h2>Noch nichts vorgeschlagen</h2><p>Im Programm bei einer Vorstellung auf „Vorschlagen“ tippen.</p></div>
       )}
       {list.map((p) => <Proposal key={p.id} p={p} members={data.members} me={me} />)}
     </>

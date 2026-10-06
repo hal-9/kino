@@ -5,7 +5,7 @@ import { eventForProposal, icsCalendar, publicUrl } from '../ics.js'
 
 const createSchema = z.object({
   movie_id: z.number().int(),
-  screening_ids: z.array(z.number().int()).min(2).max(5),
+  screening_ids: z.array(z.number().int()).min(1).max(5),
   note: z.string().trim().max(300).optional(),
 })
 const voteSchema = z.object({ value: z.enum(['yes', 'maybe', 'no']) })
@@ -68,7 +68,7 @@ export function proposalsRouter(db) {
          WHERE s.movie_id = ? AND s.id IN (${ids.map(() => '?').join(',')}) ORDER BY s.starts_at`
       )
       .all(movie_id, ...ids)
-    if (ids.length < 2 || shows.length !== ids.length) return res.status(422).json({ error: 'validation failed' })
+    if (shows.length !== ids.length) return res.status(422).json({ error: 'validation failed' })
 
     const id = db.transaction(() => {
       const pid = Number(

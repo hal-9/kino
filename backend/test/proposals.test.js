@@ -31,9 +31,12 @@ describe('Vorschläge + Kalender', () => {
     expect(Object.values(o.votes)).toEqual(['yes'])
   })
 
-  it('validiert: zu wenige Optionen, fremde Vorstellung', async () => {
-    expect((await create(c1, shows.slice(0, 1))).status).toBe(422)
+  it('validiert: keine Option, fremde Vorstellung; eine Vorstellung genügt, mehrere Vorschläge je Film', async () => {
+    expect((await create(c1, [])).status).toBe(422)
     expect((await create(c1, [shows[0], 9999])).status).toBe(422)
+    expect((await create(c1, [shows[0]])).status).toBe(201)
+    expect((await create(c1, [shows[1]])).status).toBe(201)
+    expect((await request(app).get('/api/proposals').set('Cookie', c1)).body.proposals).toHaveLength(2)
   })
 
   it('Vote-Upsert und Buchen', async () => {
