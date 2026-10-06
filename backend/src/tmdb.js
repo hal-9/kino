@@ -58,7 +58,7 @@ async function resolve(db, movie, { fetch, apiKey }) {
 
 const due = (m) => m.tmdb_status !== 'manual' && (!m.tmdb_next_retry_at || m.tmdb_next_retry_at <= iso(Date.now()))
 
-// Ohne TMDB_API_KEY ein No-Op. Je Lauf max. 30 fällige Filme; 429 beendet den Lauf.
+// Ohne TMDB_API_KEY ein No-Op. Je Lauf max. 500 fällige Filme (das ganze Programm, sonst fehlen Poster bis zum nächsten Lauf); 429 beendet den Lauf.
 export async function enrich(db, { fetch, apiKey = process.env.TMDB_API_KEY, log = () => {} } = {}) {
   if (!apiKey) return 0
   const movies = db
@@ -66,7 +66,7 @@ export async function enrich(db, { fetch, apiKey = process.env.TMDB_API_KEY, log
       `SELECT m.* FROM movies m
        WHERE m.tmdb_id IS NULL AND COALESCE(m.tmdb_status, '') != 'manual' AND (m.tmdb_next_retry_at IS NULL OR m.tmdb_next_retry_at <= ?)
          AND EXISTS (SELECT 1 FROM screenings s WHERE s.movie_id = m.id AND datetime(s.starts_at) > datetime('now'))
-       ORDER BY m.id DESC LIMIT 30`
+       ORDER BY m.id DESC LIMIT 500`
     )
     .all(iso(Date.now()))
   let n = 0

@@ -140,3 +140,17 @@ describe('Migration 012 auf befüllter DB', () => {
     expect(db.pragma('integrity_check', { simple: true })).toBe('ok')
   })
 })
+
+describe('Poster im Programm ohne Detail-Aufruf', () => {
+  it('ein Lauf holt Poster für das ganze Programm, nicht nur 30 Filme', async () => {
+    process.env.TMDB_API_KEY = 'k'
+    const { db } = setupTestApp()
+    db.prepare("INSERT INTO cinemas (key, name) VALUES ('x', 'X')").run()
+    const insM = db.prepare('INSERT INTO movies (title, norm_title, year) VALUES (?, ?, 2099)')
+    const insS = db.prepare("INSERT INTO screenings (cinema_key, movie_id, starts_at, source) VALUES ('x', ?, '2099-01-01T20:00:00+01:00', 'yorck')")
+    for (let i = 0; i < 40; i++) insS.run(Number(insM.run(`Film ${i}`, `film ${i}`).lastInsertRowid))
+    const fetch = async (u) => ok({ results: [{ id: 1, title: new URL(u).searchParams.get('query'), release_date: '2099-01-01', poster_path: '/p.jpg' }] })
+    await enrich(db, { fetch })
+    expect(db.prepare('SELECT COUNT(*) n FROM movies WHERE poster_url IS NOT NULL').get().n).toBe(40)
+  })
+})
