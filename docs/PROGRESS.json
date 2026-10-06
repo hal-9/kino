@@ -842,7 +842,13 @@
     ],
     "next_ready": [
       "K15"
-    ]
+    ],
+    "removed_by_owner": {
+      "date": "2026-10-06",
+      "reason": "owner judged too complex",
+      "commit": "c69966b",
+      "part": "time filter only (Beginn ab / Ende bis, timeFit/isHm); OV/favourites/search/day filters remain"
+    }
   },
   "K15": {
     "status": "code_complete",
@@ -1353,7 +1359,7 @@
     ]
   },
   "K27": {
-    "status": "code_complete",
+    "status": "removed_by_owner",
     "date": "2026-10-06",
     "scope": "Watchlist (own interest per movie, optional expiry), explicit hard/soft planning preferences, dated manual availability, visibility control; Planen screen + Merken button. No calendar/location/travel APIs.",
     "commands": {
@@ -1395,10 +1401,16 @@
     ],
     "next_ready": [
       "K28"
-    ]
+    ],
+    "removed_by_owner": {
+      "date": "2026-10-06",
+      "reason": "owner judged too complex",
+      "commit": "c76aca5",
+      "previous_status": "code_complete"
+    }
   },
   "K28": {
-    "status": "code_complete",
+    "status": "removed_by_owner",
     "date": "2026-10-06",
     "scope": "Pure D07 matcher (hard filter, then transparent soft score, two modes), read-only GET /match over real canonical screenings of watchlisted films, 'Nächster Kinoabend' UI with handoff into the existing one-film proposal draft. Matcher, endpoint and UI tested separately.",
     "commands": {
@@ -1444,10 +1456,16 @@
     "next_ready": [
       "K29",
       "K34"
-    ]
+    ],
+    "removed_by_owner": {
+      "date": "2026-10-06",
+      "reason": "owner judged too complex",
+      "commit": "c76aca5",
+      "previous_status": "code_complete"
+    }
   },
   "K29": {
-    "status": "code_complete",
+    "status": "removed_by_owner",
     "date": "2026-10-06",
     "scope": "In-app only Radar: per-user explicit consent (default off), watchlist-film-now-showing and booked-show-change detection into deduplicated recipient events, transactional outbox with bounded retries, dispatch-time consent/mute/membership/quiet-hours/daily-cap checks, inbox on Planen, settings in Einstellungen. No external channel exists.",
     "commands": {
@@ -1490,7 +1508,13 @@
     ],
     "next_ready": [
       "K30"
-    ]
+    ],
+    "removed_by_owner": {
+      "date": "2026-10-06",
+      "reason": "owner judged too complex",
+      "commit": "c76aca5",
+      "previous_status": "code_complete"
+    }
   },
   "K30": {
     "status": "code_complete",
@@ -1618,7 +1642,7 @@
     ]
   },
   "K34": {
-    "status": "code_complete",
+    "status": "removed_by_owner",
     "date": "2026-10-06",
     "scope": "Deterministic, local German sentence -> strict K14 filter schema (tag, q, ov, fav, ab, bis) with visible unresolved values and candidates, strict validation of any provider output, pluggable provider interface, review-then-apply UI hook in Programm. No model provider, no API keys, no network.",
     "commands": {
@@ -1652,7 +1676,13 @@
     ],
     "next_ready": [
       "K35"
-    ]
+    ],
+    "removed_by_owner": {
+      "date": "2026-10-06",
+      "reason": "owner judged too complex",
+      "commit": "70b2d90",
+      "previous_status": "code_complete"
+    }
   },
   "K35": {
     "status": "code_complete",
