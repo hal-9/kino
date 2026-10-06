@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
@@ -11,6 +12,15 @@ export default function Einstellungen() {
   const cal = useQuery({ queryKey: ['cal'], queryFn: () => api.get('/cal/token') })
   const sources = useQuery({ queryKey: ['sources'], queryFn: () => api.get('/sources') })
 
+  const settings = useQuery({ queryKey: ['settings'], queryFn: () => api.get('/settings') })
+  const [lb, setLb] = useState('')
+  const [saved, setSaved] = useState(false)
+  useEffect(() => { if (settings.data) setLb(settings.data.letterboxd_user ?? '') }, [settings.data])
+  async function saveLb() {
+    await api.patch('/me', { letterboxd_user: lb.trim() })
+    setSaved(true)
+  }
+
   async function logout() {
     await api.post('/logout').catch(() => {})
     qc.clear()
@@ -21,6 +31,14 @@ export default function Einstellungen() {
     <>
       <section className="group">
         <h2 className="group-title">{me?.name} · {me?.household.name}</h2>
+      </section>
+      <section className="group">
+        <h2 className="group-title">Letterboxd</h2>
+        <div className="card pad">
+          <p className="sub">Dein Nutzername, damit Bewertungen am nächsten Tag automatisch an den Besuch kommen.</p>
+          <input className="field" placeholder="letterboxd-Name" value={lb} onChange={(e) => { setLb(e.target.value); setSaved(false) }} />
+          <button className="btn primary" onClick={saveLb}>{saved ? 'Gespeichert ✓' : 'Speichern'}</button>
+        </div>
       </section>
       <section className="group">
         <h2 className="group-title">Kalender-Abo</h2>

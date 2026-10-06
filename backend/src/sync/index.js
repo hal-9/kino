@@ -8,6 +8,8 @@ import * as yorck from './yorck.js'
 import * as zoopalast from './zoopalast.js'
 import * as uci from './uci.js'
 import * as berlinde from './berlinde.js'
+import * as tmdb from '../tmdb.js'
+import * as letterboxd from '../letterboxd.js'
 
 const CINEMAS_JSON = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'data', 'cinemas.json')
 const ADAPTERS = { kinoheld, yorck, zoopalast, uci, berlinde }
@@ -215,6 +217,8 @@ export async function runSync(db, { fetch = createFetch(), log = console.log, ad
         db.prepare(`DELETE FROM screenings WHERE ${gone}`).run(...ok)
       })()
     }
+    await tmdb.enrich(db, { fetch, log }).catch((e) => log(`tmdb: ${e.message}`))
+    await letterboxd.syncRatings(db, { fetch, log }).catch((e) => log(`letterboxd: ${e.message}`))
     return { ok, rows: rows.length }
   } finally {
     running = false

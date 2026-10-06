@@ -7,6 +7,7 @@ import Login from './screens/Login.jsx'
 import Register from './screens/Register.jsx'
 import Programm from './screens/Programm.jsx'
 import Vorschlaege from './screens/Vorschlaege.jsx'
+import Besuche from './screens/Besuche.jsx'
 import Einstellungen from './screens/Einstellungen.jsx'
 
 function useMe() {
@@ -37,7 +38,8 @@ export default function App() {
       <Route path="/vorschlaege" element={<Guard><Vorschlaege /></Guard>} />
       <Route path="/vorschlaege/:id" element={<Guard><Vorschlaege /></Guard>} />
       <Route path="/einstellungen" element={<Guard><Einstellungen /></Guard>} />
-      <Route path="/besuche/*" element={<Guard><Soon m="M3" /></Guard>} />
+      <Route path="/besuche" element={<Guard><Besuche /></Guard>} />
+      <Route path="/besuche/:id" element={<Guard><Besuche /></Guard>} />
       <Route path="/wrapped" element={<Guard><Soon m="M4" /></Guard>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
