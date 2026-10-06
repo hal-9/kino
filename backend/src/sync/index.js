@@ -55,24 +55,54 @@ function loadCinemas(db) {
   )
 }
 
-const samePrefix = (a, b) => {
-  const n = Math.min(12, a.length, b.length)
-  return n >= 4 && a.slice(0, n) === b.slice(0, n)
+// Schlüssel einer Beobachtung: Provider-ID, sonst Fallback Kino|Titel|UTC-Zeitpunkt|Saal|Fassung
+// (bewusst ohne Ticket-Token und Auslastung). Ändert sich ein Fallback-Feld, entsteht eine neue Beobachtung.
+export const sourceKey = (row) =>
+  row.sourceId != null && row.sourceId !== ''
+    ? String(row.sourceId)
+    : [row.cinemaKey, normTitle(row.title), new Date(row.startsAt).toISOString(), row.auditorium ?? '', row.version ?? ''].join('|')
+
+const fits = (a, b) => a == null || b == null || a === b
+
+// Kandidaten: Vorstellungen desselben Films, Kinos und Zeitpunkts (mit den Quellen, die sie schon beobachtet haben).
+// Treffer nur bei genau einem verträglichen Kandidaten: bekannte Saal-/Fassungswerte müssen gleich sein, und
+// dieselbe Quelle kennt ihn nicht schon unter anderem Schlüssel. Mehrdeutig → keine Zusammenlegung.
+export function resolveScreening(row, candidates) {
+  const ok = candidates.filter((c) => !c.sources.includes(row.source) && fits(c.version, row.version) && fits(c.auditorium, row.auditorium))
+  return ok.length === 1 ? ok[0].id : null
+}
+
+// Film: exakter normierter Titel (+ Jahr), sonst verifizierter Alias (TMDB-Originaltitel). Titelanfänge sind
+// kein Beweis; ein Titel ohne Jahr wird bei mehreren gleichnamigen Filmen keinem zugeschlagen.
+export function pickMovie(candidates, year) {
+  if (year) {
+    const exact = candidates.find((m) => m.year === year)
+    if (exact) return { id: exact.id }
+    return candidates.length === 1 && candidates[0].year == null ? { id: candidates[0].id, adoptYear: true } : null
+  }
+  if (candidates.length === 1) return { id: candidates[0].id }
+  const yearless = candidates.find((m) => m.year == null)
+  return yearless ? { id: yearless.id } : null
 }
 
 function mergeRows(db, rows) {
-  const findMovieYear = db.prepare('SELECT id FROM movies WHERE norm_title = ? AND year = ?')
-  const findMovieNull = db.prepare('SELECT id FROM movies WHERE norm_title = ? AND year IS NULL')
-  const findMovieAny = db.prepare('SELECT id FROM movies WHERE norm_title = ? ORDER BY year IS NULL, id LIMIT 1')
+  db.function('norm_title', { deterministic: true }, (t) => (t == null ? null : normTitle(t)))
+  const byNorm = db.prepare('SELECT id, year FROM movies WHERE norm_title = ? ORDER BY id')
+  const byAlias = db.prepare('SELECT id, year FROM movies WHERE tmdb_id IS NOT NULL AND norm_title(title_original) = ? ORDER BY id')
   const setYear = db.prepare('UPDATE movies SET year = ? WHERE id = ?')
   const insMovie = db.prepare('INSERT INTO movies (title, norm_title, year, runtime) VALUES (?, ?, ?, ?)')
   const setRuntime = db.prepare('UPDATE movies SET runtime = ? WHERE id = ? AND runtime IS NULL')
   const hasCinema = db.prepare('SELECT 1 FROM cinemas WHERE key = ?')
   const insCinema = db.prepare('INSERT INTO cinemas (key, name) VALUES (?, ?)')
-  const candidates = db.prepare(
-    `SELECT s.*, m.norm_title FROM screenings s JOIN movies m ON m.id = s.movie_id
-     WHERE s.cinema_key = ? AND datetime(s.starts_at) = datetime(?)`
+  const observed = db.prepare(
+    `SELECT s.* FROM screening_observations o JOIN screenings s ON s.id = o.screening_id
+     WHERE o.source = ? AND o.source_key = ? AND s.movie_id = ? AND s.cinema_key = ? AND datetime(s.starts_at) = datetime(?)`
   )
+  const candidates = db.prepare(
+    `SELECT s.*, (SELECT group_concat(o.source) FROM screening_observations o WHERE o.screening_id = s.id) AS sources
+     FROM screenings s WHERE s.cinema_key = ? AND s.movie_id = ? AND datetime(s.starts_at) = datetime(?)`
+  )
+  const byId = db.prepare('SELECT * FROM screenings WHERE id = ?')
   const insShow = db.prepare(
     `INSERT INTO screenings (cinema_key, movie_id, starts_at, version, auditorium, attrs_json, ticket_url, source, source_id)
      VALUES (@cinemaKey, @movieId, @startsAt, @version, @auditorium, @attrs, @ticketUrl, @source, @sourceId)`
@@ -81,6 +111,14 @@ function mergeRows(db, rows) {
     `UPDATE screenings SET version = @version, auditorium = @auditorium, attrs_json = @attrs, ticket_url = @ticketUrl,
        last_seen_at = datetime('now') WHERE id = @id`
   )
+  const observe = db.prepare(
+    `INSERT INTO screening_observations (screening_id, source, source_key, cinema_key, title, year, starts_at, version, auditorium, attrs_json, ticket_url, runtime)
+     VALUES (@screeningId, @source, @key, @cinemaKey, @title, @year, @startsAt, @version, @auditorium, @attrs, @ticketUrl, @runtime)
+     ON CONFLICT (source, source_key) DO UPDATE SET screening_id = excluded.screening_id, cinema_key = excluded.cinema_key,
+       title = excluded.title, year = excluded.year, starts_at = excluded.starts_at, version = excluded.version,
+       auditorium = excluded.auditorium, attrs_json = excluded.attrs_json, ticket_url = excluded.ticket_url,
+       runtime = excluded.runtime, last_seen_at = datetime('now')`
+  )
   const movieCache = new Map()
   const overlayDays = new Map() // 'cinema|day' → Set belegter Screening-IDs
 
@@ -88,12 +126,11 @@ function mergeRows(db, rows) {
     const norm = normTitle(row.title)
     const ck = `${norm}|${row.year ?? ''}`
     if (movieCache.has(ck)) return movieCache.get(ck)
-    let id
-    if (row.year) {
-      id = findMovieYear.get(norm, row.year)?.id
-      if (!id && (id = findMovieNull.get(norm)?.id)) setYear.run(row.year, id)
-    } else id = findMovieAny.get(norm)?.id
-    if (!id) id = Number(insMovie.run(row.title, norm, row.year, row.runtime).lastInsertRowid)
+    let ms = byNorm.all(norm)
+    if (!ms.length) ms = byAlias.all(norm)
+    const hit = pickMovie(ms, row.year)
+    if (hit?.adoptYear) setYear.run(row.year, hit.id)
+    const id = hit?.id ?? Number(insMovie.run(row.title, norm, row.year, row.runtime).lastInsertRowid)
     if (row.runtime) setRuntime.run(row.runtime, id)
     movieCache.set(ck, id)
     return id
@@ -103,25 +140,29 @@ function mergeRows(db, rows) {
     for (const row of rows) {
       if (!hasCinema.get(row.cinemaKey)) insCinema.run(row.cinemaKey, row.cinemaName)
       const id = movieId(row)
-      const norm = normTitle(row.title)
-      const old = candidates.all(row.cinemaKey, row.startsAt).find((s) => s.movie_id === id || samePrefix(s.norm_title, norm))
+      const key = sourceKey(row)
       const claim = (sid) => {
         if (row.source === 'kinoheld') return
         const k = `${row.cinemaKey}|${row.startsAt.slice(0, 10)}`
         if (!overlayDays.has(k)) overlayDays.set(k, new Set())
         overlayDays.get(k).add(sid)
       }
+      const attrs = JSON.stringify(row.attrs)
+      let old = observed.get(row.source, key, id, row.cinemaKey, row.startsAt)
       if (!old) {
-        claim(Number(insShow.run({ ...row, movieId: id, attrs: JSON.stringify(row.attrs) }).lastInsertRowid))
-        continue
+        const cands = candidates.all(row.cinemaKey, id, row.startsAt).map((c) => ({ ...c, sources: c.sources?.split(',') ?? [] }))
+        const sid = resolveScreening(row, cands)
+        old = sid && byId.get(sid)
       }
-      claim(old.id)
+      const screeningId = old ? old.id : Number(insShow.run({ ...row, movieId: id, attrs }).lastInsertRowid)
+      observe.run({ ...row, screeningId, key, attrs })
+      claim(screeningId)
+      if (!old) continue
       const base = row.source === 'kinoheld' // Basis überschreibt nie Overlay-Werte
       const pick = (o, n) => (base ? (o ?? n) : (n ?? o))
-      const attrs = [...new Set([...JSON.parse(old.attrs_json), ...row.attrs])]
       updShow.run({
         id: old.id, version: pick(old.version, row.version), auditorium: pick(old.auditorium, row.auditorium),
-        attrs: JSON.stringify(attrs), ticketUrl: pick(old.ticket_url, row.ticketUrl),
+        attrs: JSON.stringify([...new Set([...JSON.parse(old.attrs_json), ...row.attrs])]), ticketUrl: pick(old.ticket_url, row.ticketUrl),
       })
     }
     // Overlay kennt den Tag vollständig: kinoheld-Zeilen ohne Partner sind Titel-Dubletten (z. B. dt./engl. Titel).
