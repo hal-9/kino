@@ -111,6 +111,11 @@ export function proposalsRouter(db) {
     const d = parsed.data
     if (d.revision !== undefined && d.revision !== p.revision) return res.status(409).json({ error: 'revision conflict' })
     if (!FROM[action].includes(p.status)) return res.status(409).json({ error: p.status })
+    // K18: Eine stattgefundene Buchung wird nicht still verlegt/geöffnet (Besuche hängen daran); Korrektur je Besuch.
+    if ((action === 'reschedule' || action === 'reopen') && p.booked_option_id) {
+      const b = db.prepare('SELECT snapshot_json FROM proposal_options WHERE id = ?').get(p.booked_option_id)
+      if (b && !(Date.parse(JSON.parse(b.snapshot_json).starts_at) > Date.now())) return res.status(409).json({ error: 'completed' })
+    }
     let detail = {}
     if (d.option_id !== undefined) {
       const opt = db.prepare('SELECT screening_id, snapshot_json FROM proposal_options WHERE id = ? AND proposal_id = ?').get(d.option_id, p.id)

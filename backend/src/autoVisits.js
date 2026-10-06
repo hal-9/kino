@@ -1,5 +1,7 @@
-// Gebuchte, beendete Vorstellungen werden für alle ✓-Wähler zum Besuch (einmalig je Person).
-// Läuft lazy beim Lesen der Besuche/Statistik; gelöschte Besuche bleiben über auto_visits gelöscht.
+// Gebuchte, beendete Vorstellungen werden für die gebuchten Teilnehmer (✓ bei der gebuchten Option; Stimmen sind
+// nach dem Buchen eingefroren) zum abgeleiteten Besuch (attendance 'inferred'), einmalig je Person.
+// Läuft lazy beim Lesen der Besuche/Statistik; gelöschte/„nicht dabei“ bleiben über auto_visits weg,
+// bestehende (auch korrigierte/bestätigte) Besuche werden nie angefasst.
 export function materializeVisits(db, householdId) {
   const booked = db
     .prepare(
@@ -12,8 +14,8 @@ export function materializeVisits(db, householdId) {
   const has = db.prepare('SELECT 1 FROM visits WHERE proposal_id = ? AND user_id = ?')
   const mark = db.prepare('INSERT INTO auto_visits (proposal_id, user_id) VALUES (?, ?)')
   const insert = db.prepare(
-    `INSERT INTO visits (user_id, household_id, proposal_id, movie_id, snapshot_json, watched_on, auditorium, companions_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO visits (user_id, household_id, proposal_id, movie_id, snapshot_json, watched_on, auditorium, companions_json, attendance)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'inferred')`
   )
   db.transaction(() => {
     for (const p of booked) {

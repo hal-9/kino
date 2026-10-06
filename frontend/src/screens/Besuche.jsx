@@ -8,6 +8,12 @@ import Sheet from '../components/Sheet.jsx'
 
 const today = () => berlinYmd()
 const fmt = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'numeric', year: 'numeric' })
+// K18: ehrliche Herkunft je Besuch.
+const ATTENDANCE = {
+  inferred: 'Aus Buchung abgeleitet (✓ bei der gebuchten Vorstellung), noch nicht bestätigt',
+  legacy: 'Früher automatisch aus ✓-Stimme übernommen, nicht bestätigt',
+  confirmed: 'Bestätigt',
+}
 const stars = (r) => '★'.repeat(Math.floor(r)) + (r % 1 ? '½' : '')
 
 function letterboxdLinks(v) {
@@ -100,6 +106,11 @@ export default function Besuche() {
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: () => api.get('/me') })
   const visits = useQuery({ queryKey: ['visits'], queryFn: () => api.get('/visits'), refetchInterval: 30_000 })
   const pending = useQuery({ queryKey: ['pending'], queryFn: () => api.get('/visits/pending') })
+  const qc = useQueryClient()
+  const attend = useMutation({
+    mutationFn: ({ id, action }) => api.post(`/visits/${id}/${action}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['visits'] }); qc.invalidateQueries({ queryKey: ['pending'] }) },
+  })
 
   // Deep-Links: /besuche/:id öffnet den Besuch, ?proposal=ID das Formular dazu.
   useEffect(() => {
@@ -138,6 +149,7 @@ export default function Besuche() {
         </section>
       )}
       <QueryError query={visits} label="Besuche" />
+      <MutationError mutation={attend} />
       <button className="btn primary" style={{ width: '100%', marginBottom: 16 }} onClick={() => setSheet({})}>+ Besuch eintragen</button>
       {list.length === 0 && <div className="empty"><h2>Noch keine Besuche</h2></div>}
       {list.map((v) => {
@@ -149,7 +161,15 @@ export default function Besuche() {
             <div className="card pad">
               <p><strong>{v.snapshot.cinema_name}</strong>{[v.auditorium, v.row && `Reihe ${v.row}`, v.seats && `Sitz ${v.seats}`].filter(Boolean).length > 0 && ' · ' + [v.auditorium, v.row && `Reihe ${v.row}`, v.seats && `Sitz ${v.seats}`].filter(Boolean).join(', ')}</p>
               <small className="muted">{[v.user_name, ...v.companions.map(name)].filter(Boolean).join(', ')}{v.note && ` · ${v.note}`}</small>
+              {ATTENDANCE[v.attendance] && <small className="att">{ATTENDANCE[v.attendance]}</small>}
               {v.letterboxd_rating != null && <p className="stars">{stars(v.letterboxd_rating)}</p>}
+              {mine && (v.attendance === 'inferred' || v.attendance === 'legacy') && (
+                <div className="sheet-actions">
+                  <button className="btn" disabled={attend.isPending} onClick={() => attend.mutate({ id: v.id, action: 'confirm' })}>Ich war dabei</button>
+                  <button className="btn" disabled={attend.isPending}
+                    onClick={() => confirm('Nicht dabei gewesen? Der Eintrag wird entfernt und nicht wieder automatisch angelegt.') && attend.mutate({ id: v.id, action: 'skip' })}>Nicht dabei</button>
+                </div>
+              )}
               {mine && (
                 <div className="sheet-actions">
                   <a className="btn primary" href={lb.app}>In Letterboxd bewerten</a>

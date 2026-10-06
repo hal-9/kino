@@ -455,3 +455,4 @@ textarea.field { min-height: 72px; resize: vertical; font-family: inherit; }
 .outing h2 { margin: 0 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--primary); }
 .outing p { margin: 4px 0; }
 .outing-title { font-size: 18px; font-weight: 700; }
+.att { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }

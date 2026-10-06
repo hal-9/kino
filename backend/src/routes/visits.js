@@ -44,7 +44,7 @@ export function visitsRouter(db) {
   const shape = (r) => ({
     id: r.id, user_id: r.user_id, user_name: r.user_name, proposal_id: r.proposal_id, movie_id: r.movie_id, tmdb_id: r.tmdb_id,
     snapshot: JSON.parse(r.snapshot_json), watched_on: r.watched_on, auditorium: r.auditorium, row: r.row, seats: r.seats,
-    companions: JSON.parse(r.companions_json), letterboxd_rating: r.letterboxd_rating, note: r.note,
+    companions: JSON.parse(r.companions_json), letterboxd_rating: r.letterboxd_rating, note: r.note, attendance: r.attendance,
   })
   const load = (where, ...args) =>
     db
@@ -166,9 +166,32 @@ export function visitsRouter(db) {
       note: 'note' in d ? d.note || null : v.note,
       companions: d.companions ? JSON.stringify(validCompanions(d.companions, v.household_id)) : v.companions_json,
     }
-    db.prepare('UPDATE visits SET watched_on = ?, auditorium = ?, row = ?, seats = ?, note = ?, companions_json = ? WHERE id = ?')
+    // Korrektur durch den Besitzer = geprüft: abgeleitete/alte Einträge werden 'confirmed'.
+    db.prepare(`UPDATE visits SET watched_on = ?, auditorium = ?, row = ?, seats = ?, note = ?, companions_json = ?,
+      attendance = CASE WHEN attendance IN ('inferred', 'legacy') THEN 'confirmed' ELSE attendance END WHERE id = ?`)
       .run(next.watched_on, next.auditorium, next.row, next.seats, next.note, next.companions, v.id)
     res.json(load('v.id = ?', v.id)[0])
+  })
+
+  // K18: Besitzer bestätigt einen abgeleiteten Besuch.
+  router.post('/visits/:id/confirm', (req, res) => {
+    const v = ownVisit(req, res)
+    if (!v) return
+    db.prepare("UPDATE visits SET attendance = 'confirmed' WHERE id = ? AND attendance IN ('inferred', 'legacy')").run(v.id)
+    res.json(load('v.id = ?', v.id)[0])
+  })
+
+  // K18: „Nicht dabei“: Besuch weg, Grabstein mit skipped_at, kein späteres Wiederanlegen.
+  router.post('/visits/:id/skip', (req, res) => {
+    const v = ownVisit(req, res)
+    if (!v) return
+    if (!v.proposal_id) return res.status(409).json({ error: 'not from booking' })
+    db.transaction(() => {
+      db.prepare('DELETE FROM visits WHERE id = ?').run(v.id)
+      db.prepare(`INSERT INTO auto_visits (proposal_id, user_id, skipped_at) VALUES (?, ?, datetime('now'))
+        ON CONFLICT (proposal_id, user_id) DO UPDATE SET skipped_at = excluded.skipped_at`).run(v.proposal_id, v.user_id)
+    })()
+    res.status(204).end()
   })
 
   router.delete('/visits/:id', (req, res) => {

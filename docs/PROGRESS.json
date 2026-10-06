@@ -977,5 +977,57 @@
     "next_ready": [
       "K18"
     ]
+  },
+  "K18": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "reproduced": {
+      "C06 controls": "repeated materialization and delete tombstones already worked (kept as regression: AC01/AC02)",
+      "provenance": "auto-created visits were indistinguishable from manual ones (no attendance field); no confirm or 'did not attend' action - only delete",
+      "rescheduling after the fact": "a booked proposal whose show had ended could still be re-booked (pre-K11) / rescheduled or reopened (K11) without review"
+    },
+    "commands": {
+      "npm test": "shared 28/28, backend 138/138, frontend 62/62; exit 0",
+      "npm run build": "exit 0",
+      "populated upgrade on dev.db copy (scratchpad)": "4 -> 17 migrations; counts and snapshots unchanged; existing visit -> manual (no auto marker); fk [], integrity ok"
+    },
+    "modified": [
+      "backend/migrations/017_visit_attendance.sql (visits.attendance manual|inferred|confirmed|legacy, backfill legacy where an auto_visits marker exists; auto_visits.skipped_at)",
+      "backend/src/autoVisits.js (new rows attendance 'inferred'; participants = yes votes on the booked option, frozen since K11)",
+      "backend/src/routes/visits.js (attendance in API; POST /visits/:id/confirm; POST /visits/:id/skip deletes + tombstone with skipped_at; owner PATCH of inferred/legacy -> confirmed)",
+      "backend/src/routes/proposals.js (reschedule/reopen of a booking whose show already started -> 409 'completed')",
+      "backend/test/attendance.test.js (new)",
+      "frontend/src/screens/Besuche.jsx (provenance line; owner-only 'Ich war dabei' / 'Nicht dabei' with confirm)",
+      "frontend/src/index.css (.att)",
+      "frontend/src/test/attendance.test.jsx (new)"
+    ],
+    "migration_notes": "017 adds visits.attendance (NOT NULL DEFAULT 'manual' + CHECK) and auto_visits.skipped_at, backfills legacy rows. Fresh + populated upgrade tested. Older code ignores both columns (new rows it inserts get 'manual').",
+    "acceptance": {
+      "K18-AC01": "passed (3x GET /visits + stats -> exactly one inferred visit per participant)",
+      "K18-AC02": "passed (deleted and skipped visits not recreated by later runs; skip recorded; nothing pending)",
+      "K18-AC03": "passed (confirm and owner correction -> 'confirmed', unchanged by later runs; reschedule/reopen of completed booking -> 409 completed)",
+      "K18-AC04": "passed (other member -> 403, other household -> 404 for confirm/skip; row unchanged)",
+      "K18-AC05": "passed (upgrade: old auto visits labelled legacy, manual stay manual, none deleted or bulk-confirmed; UI shows label). Stats/Wrapped still include all visits (inclusion semantics per category are K21)"
+    },
+    "decisions": [
+      "'Explicit booked participants' = yes-voters on the booked option; since K11 votes are frozen at booking, so this set is fixed at booking time.",
+      "Correction (PATCH) by the owner counts as review -> confirmed; manual visits stay 'manual'.",
+      "Skip only for visits that came from a booking (proposal_id); otherwise delete is the action.",
+      "Completed bookings: no reschedule/reopen; per-person correction happens on the visit."
+    ],
+    "deferred": [
+      "stats/Wrapped split by attendance (inferred/legacy vs confirmed) - K21",
+      "undo for 'Nicht dabei' (tombstone stays; user can add a visit manually)"
+    ],
+    "gaps": [
+      "real device check of Besuche actions: not run"
+    ],
+    "next_ready": [
+      "K20",
+      "K21",
+      "K26",
+      "K31",
+      "K36"
+    ]
   }
 }
