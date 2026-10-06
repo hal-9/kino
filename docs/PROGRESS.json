@@ -755,5 +755,49 @@
     "next_ready": [
       "K13"
     ]
+  },
+  "K13": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "reproduced": {
+      "UI": "Programm draft held exactly one screening (screening_ids: [draft.screening.id]); API already accepted 1-5",
+      "duplicates": "server silently de-duplicated screening_ids instead of rejecting (multioption AC02 failed against pre-K13 route: 201 instead of 422)",
+      "edit": "no way to add options to an open ballot (AC05 404 before)"
+    },
+    "commands": {
+      "npm test": "shared 23/23, backend 126/126, frontend 36/36; exit 0",
+      "npm run build": "exit 0"
+    },
+    "modified": [
+      "backend/src/routes/proposals.js (eligibleShows: duplicate/foreign-film/withdrawn -> 422, started -> 409; insertOption shared; POST /proposals/:id/options appends to open ballot with revision check, max 5 total, new options without votes, 'options' event, idempotency key per proposal)",
+      "backend/test/multioption.test.js (new)",
+      "frontend/src/screens/Programm.jsx (tray: one film, up to 5 shows, one note, one idempotency key; persisted in sessionStorage; toggle select, confirm before switching film, Leeren, Weiter -> compare sheet with time/cinema/room/version/attrs/estimated end incl. 20 min ads or 'Laufzeit fehlt', remove, expired blocks send)",
+      "frontend/src/index.css (.tray, .compare)",
+      "frontend/src/test/tray.test.jsx (new); screens.test.jsx + failures.test.jsx (tray step, sessionStorage cleanup)"
+    ],
+    "migration_notes": "No schema change.",
+    "acceptance": {
+      "K13-AC01": "passed (backend: 3 shows across days/cinemas -> one proposal, options in time order; jsdom: 3 selected across two day chips -> one POST with [11,12,13] + note)",
+      "K13-AC02": "passed (server: 1 and 5 accepted; 0, 6, duplicate, other film, withdrawn rejected 422. client: film switch needs confirm, 6th refused with hint, started show blocks send)",
+      "K13-AC03": "passed in jsdom (day change and unmount/remount keep selection and note via sessionStorage)",
+      "K13-AC04": "passed (second user votes per option; unanswered option shows no entry for that user, distinct from no)",
+      "K13-AC05": "passed (append: existing votes untouched, new option has no votes, revision conflict 409, booked ballot 409; expired show stays in draft with notice instead of being dropped)"
+    },
+    "decisions": [
+      "Draft persistence in sessionStorage (per tab, survives navigation/reload, not shared across devices or accounts after tab close). Wrapped in try/catch.",
+      "Freshness per option not shown in the compare sheet (programme freshness banner already exists); unknown room/version/runtime are labelled explicitly.",
+      "Estimated end = start + runtime + 20 min ads (same buffer as ICS); without runtime no estimate."
+    ],
+    "deferred": [
+      "UI to append options to an open ballot (backend endpoint exists)",
+      "retiring options from an open ballot (needs retired_at column; votes/history must stay)",
+      "explicit account partitioning of the sessionStorage draft (cleared only by tab close/send/Leeren)"
+    ],
+    "gaps": [
+      "real mobile browser check of the sticky tray above bottom nav / safe areas: not run"
+    ],
+    "next_ready": [
+      "K14"
+    ]
   }
 }

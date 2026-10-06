@@ -13,8 +13,23 @@ const dayLabel = (ymd, today) =>
   ymd === today ? 'Heute' : ymd === addDays(today, 1) ? 'Morgen' : new Date(`${ymd}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric' })
 const time = (iso) => iso.slice(11, 16)
 const dateShort = (iso) => new Date(`${iso.slice(0, 10)}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'numeric' })
+const MAX_OPTIONS = 5
+const AD_MINUTES = 20 // Werbung/Trailer vor dem Film, wie im Kalendereintrag
+// Geschätztes Ende in Berliner Zeit; ohne Laufzeit ausdrücklich unbekannt.
+const finish = (iso, runtime) => runtime
+  ? `Ende ca. ${new Date(Date.parse(iso) + (runtime + AD_MINUTES) * 60_000).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })} (inkl. ~${AD_MINUTES} Min. Werbung)`
+  : 'Ende unbekannt (Laufzeit fehlt)'
 
-function Row({ s, showDate, onPropose }) {
+// K13: Auswahl (ein Film, bis zu fünf Vorstellungen, eine Notiz) überlebt Tag-/Filterwechsel und Navigation im Tab.
+const DRAFT_KEY = 'kino.proposalDraft'
+function loadDraft() {
+  try { return JSON.parse(sessionStorage.getItem(DRAFT_KEY)) } catch { return null }
+}
+function saveDraft(d) {
+  try { d ? sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d)) : sessionStorage.removeItem(DRAFT_KEY) } catch {}
+}
+
+function Row({ s, showDate, onPropose, selected }) {
   return (
     <div className="slot">
       <div className="slot-top">
@@ -26,18 +41,18 @@ function Row({ s, showDate, onPropose }) {
         {s.version && <span className={`badge ${s.version === 'DF' ? '' : 'ov'}`}>{s.version}</span>}
       </div>
       <div className="slot-actions">
-        <button className="mini primary" onClick={onPropose} aria-label={`Vorschlagen: ${s.cinema_name} ${time(s.starts_at)}`}>Vorschlagen</button>
+        <button className={`mini${selected ? '' : ' primary'}`} onClick={onPropose} aria-pressed={selected} aria-label={`Vorschlagen: ${s.cinema_name} ${time(s.starts_at)}`}>{selected ? '✓ Ausgewählt' : 'Vorschlagen'}</button>
         {s.ticket_url && <a className="mini" href={s.ticket_url} target="_blank" rel="noreferrer">Buchen ↗</a>}
       </div>
     </div>
   )
 }
 
-function MovieCard({ movie, favOnly, showDate, onPropose, onInfo }) {
+function MovieCard({ movie, favOnly, showDate, onPropose, onInfo, selected }) {
   const fav = movie.screenings.filter((s) => s.is_favorite)
   const rest = favOnly ? [] : movie.screenings.filter((s) => !s.is_favorite)
   const [open, setOpen] = useState(fav.length === 0)
-  const row = (s) => <Row key={s.id} s={s} showDate={showDate} onPropose={() => onPropose(movie, s)} />
+  const row = (s) => <Row key={s.id} s={s} showDate={showDate} selected={selected.has(s.id)} onPropose={() => onPropose(movie, s)} />
   return (
     <section className="group">
       <MovieHeader movie={movie} onInfo={onInfo} />
@@ -61,17 +76,44 @@ export default function Programm() {
   const [ov, setOv] = useState(false)
   const [favOnly, setFavOnly] = useState(false)
   const [info, setInfo] = useState(null)
-  const [draft, setDraft] = useState(null) // { movie, screening, key }
-  const [note, setNote] = useState('')
+  const [draft, setDraftState] = useState(loadDraft) // { movie, shows, note, key }
+  const [tray, setTray] = useState(false)
+  const [hint, setHint] = useState(null)
+  const setDraft = (d) => { setDraftState(d); saveDraft(d) }
+  const note = draft?.note ?? ''
+  const setNote = (v) => setDraft({ ...draft, note: v })
   const navigate = useNavigate()
   const qc = useQueryClient()
   const create = useMutation({
     // Ein Schlüssel je Entwurf: Wiederholung nach Fehler/Netzabbruch legt keinen zweiten Vorschlag an.
-    mutationFn: () => api.post('/proposals', { movie_id: draft.movie.id, screening_ids: [draft.screening.id], note: note || undefined }, { idempotencyKey: draft.key }),
-    onSuccess: (p) => { qc.invalidateQueries({ queryKey: ['proposals'] }); setDraft(null); setNote(''); navigate(`/vorschlaege/${p.id}`) },
+    mutationFn: () => api.post('/proposals', { movie_id: draft.movie.id, screening_ids: draft.shows.map((s) => s.id), note: note || undefined }, { idempotencyKey: draft.key }),
+    onSuccess: (p) => { qc.invalidateQueries({ queryKey: ['proposals'] }); setDraft(null); setTray(false); navigate(`/vorschlaege/${p.id}`) },
   })
 
-  const closeDraft = () => { setDraft(null); create.reset() }
+  const selected = new Set(draft?.shows.map((s) => s.id))
+  function toggle(movie, s) {
+    setHint(null)
+    create.reset()
+    if (draft && draft.movie.id !== movie.id) {
+      if (!confirm(`Auswahl für „${draft.movie.title}“ verwerfen und mit „${movie.title}“ neu beginnen?`)) return
+      return setDraft({ movie: { id: movie.id, title: movie.title, runtime: movie.runtime }, shows: [s], note: '', key: newKey() })
+    }
+    if (!draft) return setDraft({ movie: { id: movie.id, title: movie.title, runtime: movie.runtime }, shows: [s], note: '', key: newKey() })
+    if (selected.has(s.id)) {
+      const shows = draft.shows.filter((x) => x.id !== s.id)
+      return setDraft(shows.length || draft.note ? { ...draft, shows } : null)
+    }
+    if (draft.shows.length >= MAX_OPTIONS) return setHint(`Höchstens ${MAX_OPTIONS} Vorstellungen je Vorschlag.`)
+    setDraft({ ...draft, shows: [...draft.shows, s].sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at)) })
+  }
+  function clearDraft() {
+    if (note.trim() && !confirm('Auswahl und Notiz verwerfen?')) return
+    setDraft(null)
+    setTray(false)
+    create.reset()
+  }
+  const remove = (id) => setDraft({ ...draft, shows: draft.shows.filter((x) => x.id !== id) })
+  const expired = (s) => !(Date.parse(s.starts_at) > Date.now())
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(q.trim()), 300)
@@ -118,22 +160,43 @@ export default function Programm() {
       {program.data && movies.length === 0 && (
         <div className="empty"><h2>Nichts gefunden</h2><p>Programm reicht etwa zwei Wochen voraus.</p></div>
       )}
-      {movies.map((m) => <MovieCard key={m.id} movie={m} favOnly={favOnly} showDate={searching} onPropose={(movie, screening) => setDraft({ movie, screening, key: newKey() })} onInfo={setInfo} />)}
+      {movies.map((m) => <MovieCard key={m.id} movie={m} favOnly={favOnly} showDate={searching} selected={selected} onPropose={toggle} onInfo={setInfo} />)}
+      {hint && <p className="stale" role="status">{hint}</p>}
+      {draft && (
+        <div className="tray" role="region" aria-label="Auswahl für den Vorschlag">
+          <span><strong>{draft.movie.title}</strong> · {draft.shows.length} {draft.shows.length === 1 ? 'Vorstellung' : 'Vorstellungen'}</span>
+          <button className="mini" onClick={clearDraft}>Leeren</button>
+          <button className="mini primary" onClick={() => setTray(true)}>Weiter</button>
+        </div>
+      )}
       <MovieSheet movieId={info} onClose={() => setInfo(null)} />
-      <Sheet open={draft != null} onClose={closeDraft} label="Vorschlag senden" dirty={note.trim() !== ''}>
+      <Sheet open={tray && draft != null} onClose={() => setTray(false)} label="Vorschlag senden">
         {draft && (
           <>
             <h3>{draft.movie.title} vorschlagen</h3>
-            <p className="sub">{dateShort(draft.screening.starts_at)} · {time(draft.screening.starts_at)} · {draft.screening.cinema_name}{draft.screening.version ? ` · ${draft.screening.version}` : ''}</p>
+            {draft.shows.length === 0 && <p className="sub">Keine Vorstellung ausgewählt. Im Programm auf „Vorschlagen“ tippen.</p>}
+            <ul className="compare" aria-label="Ausgewählte Vorstellungen">
+              {draft.shows.map((s) => (
+                <li key={s.id}>
+                  <div>
+                    <strong>{dateShort(s.starts_at)} · {time(s.starts_at)}</strong> · {s.cinema_name}
+                    <small>{[s.auditorium ?? 'Saal unbekannt', s.version ?? 'Fassung unbekannt', ...(s.attrs ?? [])].join(' · ')}</small>
+                    <small>{expired(s) ? 'Hat schon begonnen, bitte entfernen.' : finish(s.starts_at, draft.movie.runtime)}</small>
+                  </div>
+                  <button className="mini" aria-label={`Entfernen: ${s.cinema_name} ${time(s.starts_at)}`} onClick={() => remove(s.id)}>Entfernen</button>
+                </li>
+              ))}
+            </ul>
+            {draft.shows.length < MAX_OPTIONS && <p className="sub">Weitere Vorstellungen desselben Films im Programm hinzufügen (bis {MAX_OPTIONS}).</p>}
             <textarea className="field" aria-label="Notiz (optional)" placeholder="Notiz (optional)" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} />
             {create.isError && (
-              <p className="stale" role="alert">{create.error.code === 'expired' ? 'Diese Vorstellung hat schon begonnen. Bitte eine andere wählen.'
+              <p className="stale" role="alert">{create.error.code === 'expired' ? 'Eine Vorstellung hat schon begonnen. Bitte entfernen oder eine andere wählen.'
                 : create.error.code === 'idempotency key reused' ? 'Vielleicht schon gesendet. Bitte unter Vorschläge prüfen.'
                 : `Senden fehlgeschlagen. ${errorText(create.error)}`}</p>
             )}
             <div className="sheet-actions">
-              <button className="btn" onClick={closeDraft}>Abbrechen</button>
-              <button className="btn primary" disabled={create.isPending} onClick={() => create.mutate()}>Vorschlag senden</button>
+              <button className="btn" onClick={() => setTray(false)}>Zurück</button>
+              <button className="btn primary" disabled={create.isPending || draft.shows.length === 0 || draft.shows.some(expired)} onClick={() => create.mutate()}>Vorschlag senden</button>
             </div>
           </>
         )}

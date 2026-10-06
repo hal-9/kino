@@ -16,6 +16,7 @@ const proposal = (votes = { 1: 'yes' }) => ({ id: 3, status: 'open', movie: { id
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
+  sessionStorage.clear()
   document.body.innerHTML = ''
 })
 
@@ -103,6 +104,7 @@ describe('K07-AC03 Entwurf bleibt, Retry mit demselben Schlüssel', () => {
     const { el } = await renderScreen(<Programm />)
     await waitFor(() => el.textContent.includes('Vorschlagen'))
     await click(el, 'Vorschlagen')
+    await click(el, 'Weiter')
     const note = document.querySelector('textarea')
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(note, 'Wer kommt?')

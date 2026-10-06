@@ -433,3 +433,9 @@ textarea.field { min-height: 72px; resize: vertical; font-family: inherit; }
 .history ul { margin: 4px 0 0; padding-left: 18px; }
 .changes { list-style: none; margin: 4px 0 0; padding: 0; font-size: 13px; color: var(--danger); }
 .changes .ack { color: var(--muted); }
+/* K13: Auswahl mehrerer Vorstellungen */
+.tray { position: sticky; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); display: flex; gap: 8px; align-items: center; padding: 10px 12px; margin: 8px 0; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); font-size: 14px; }
+.tray span { flex: 1; min-width: 0; }
+.compare { list-style: none; margin: 0 0 8px; padding: 0; }
+.compare li { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.compare small { display: block; color: var(--muted); }

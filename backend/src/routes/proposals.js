@@ -16,6 +16,7 @@ const revision = z.number().int().optional()
 const bookSchema = z.object({ option_id: z.number().int(), ticket_link: link.nullish(), revision })
 const ticketSchema = z.object({ ticket_link: link.nullable(), revision })
 const actionSchema = z.object({ revision }).default({})
+const addSchema = z.object({ screening_ids: z.array(z.number().int()).min(1).max(4), revision })
 
 // Planungsstatus (open/booked/cancelled) ist getrennt von Anwesenheit (Besuche). Erlaubte Übergänge:
 const FROM = { book: ['open'], reschedule: ['booked'], cancel: ['open', 'booked'], reopen: ['booked', 'cancelled'], review: ['open', 'booked'] }
@@ -132,21 +133,61 @@ export function proposalsRouter(db) {
   })
   const key = (action) => idempotent(db, (req) => `proposal.${action}:${req.params.id}`)
 
-  router.post('/proposals', idempotent(db, 'proposal.create'), (req, res) => {
-    const parsed = createSchema.safeParse(req.body)
-    if (!parsed.success) return res.status(422).json({ error: 'validation failed', details: parsed.error.issues })
-    const { movie_id, screening_ids, note } = parsed.data
-    const ids = [...new Set(screening_ids)]
+  // Ein Film, 1-5 verschiedene, kommende, nicht zurückgezogene Vorstellungen. 422 ungültig, 409 inzwischen begonnen.
+  function eligibleShows(movieId, ids, res) {
+    if (new Set(ids).size !== ids.length) return void res.status(422).json({ error: 'validation failed' })
     const shows = db
       .prepare(
         `SELECT s.*, c.name AS cinema_name, c.street, c.zip, c.lat, c.lng, m.title, m.year, m.runtime
          FROM screenings s JOIN cinemas c ON c.key = s.cinema_key JOIN movies m ON m.id = s.movie_id
          WHERE s.movie_id = ? AND s.withdrawn_at IS NULL AND s.id IN (${ids.map(() => '?').join(',')}) ORDER BY s.starts_at`
       )
-      .all(movie_id, ...ids)
-    if (shows.length !== ids.length) return res.status(422).json({ error: 'validation failed' })
+      .all(movieId, ...ids)
+    if (shows.length !== ids.length) return void res.status(422).json({ error: 'validation failed' })
     // Beim Absenden neu prüfen: inzwischen begonnene Vorstellungen sind nicht mehr wählbar.
-    if (shows.some((s) => !(Date.parse(s.starts_at) > Date.now()))) return res.status(409).json({ error: 'expired' })
+    if (shows.some((s) => !(Date.parse(s.starts_at) > Date.now()))) return void res.status(409).json({ error: 'expired' })
+    return shows
+  }
+  function insertOption(pid, s) {
+    const snapshot = {
+      cinema_key: s.cinema_key, cinema_name: s.cinema_name, street: s.street, zip: s.zip, lat: s.lat, lng: s.lng,
+      starts_at: s.starts_at, version: s.version, auditorium: s.auditorium, ticket_url: s.ticket_url,
+      title: s.title, year: s.year, runtime: s.runtime,
+    }
+    return Number(db.prepare('INSERT INTO proposal_options (proposal_id, screening_id, snapshot_json) VALUES (?, ?, ?)').run(pid, s.id, JSON.stringify(snapshot)).lastInsertRowid)
+  }
+
+  // K13: offene Abstimmung um Vorstellungen desselben Films ergänzen (max. 5 insgesamt). Neue Optionen starten
+  // ohne Stimmen; bestehende Stimmen und Snapshots bleiben unberührt.
+  router.post('/proposals/:id/options', key('options'), (req, res) => {
+    const p = own(req, res)
+    if (!p) return
+    const parsed = addSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(422).json({ error: 'validation failed' })
+    const { screening_ids, revision: rev } = parsed.data
+    if (p.status !== 'open') return res.status(409).json({ error: p.status })
+    if (rev !== undefined && rev !== p.revision) return res.status(409).json({ error: 'revision conflict' })
+    const existing = db.prepare('SELECT screening_id FROM proposal_options WHERE proposal_id = ?').all(p.id).map((o) => o.screening_id)
+    if (existing.length + screening_ids.length > 5 || screening_ids.some((i) => existing.includes(i))) return res.status(422).json({ error: 'validation failed' })
+    const shows = eligibleShows(p.movie_id, screening_ids, res)
+    if (!shows) return
+    const ok = db.transaction(() => {
+      if (!db.prepare("UPDATE proposals SET revision = revision + 1, updated_at = datetime('now') WHERE id = ? AND revision = ?").run(p.id, p.revision).changes) return false
+      const ids = shows.map((s) => insertOption(p.id, s))
+      db.prepare("INSERT INTO proposal_events (proposal_id, user_id, action, revision, detail_json) VALUES (?, ?, 'options', ?, ?)")
+        .run(p.id, req.user.id, p.revision + 1, JSON.stringify({ option_ids: ids }))
+      return true
+    })()
+    if (!ok) return res.status(409).json({ error: 'revision conflict' })
+    res.json(loadProposals(db, req.user.householdId, p.id)[0])
+  })
+
+  router.post('/proposals', idempotent(db, 'proposal.create'), (req, res) => {
+    const parsed = createSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(422).json({ error: 'validation failed', details: parsed.error.issues })
+    const { movie_id, screening_ids, note } = parsed.data
+    const shows = eligibleShows(movie_id, screening_ids, res)
+    if (!shows) return
 
     const id = db.transaction(() => {
       const pid = Number(
@@ -154,16 +195,8 @@ export function proposalsRouter(db) {
           .run(req.user.householdId, movie_id, req.user.id, note || null).lastInsertRowid
       )
       db.prepare("INSERT INTO proposal_events (proposal_id, user_id, action, revision) VALUES (?, ?, 'created', 1)").run(pid, req.user.id)
-      const insOpt = db.prepare('INSERT INTO proposal_options (proposal_id, screening_id, snapshot_json) VALUES (?, ?, ?)')
       const insVote = db.prepare("INSERT INTO votes (option_id, user_id, value) VALUES (?, ?, 'yes')")
-      for (const s of shows) {
-        const snapshot = {
-          cinema_key: s.cinema_key, cinema_name: s.cinema_name, street: s.street, zip: s.zip, lat: s.lat, lng: s.lng,
-          starts_at: s.starts_at, version: s.version, auditorium: s.auditorium, ticket_url: s.ticket_url,
-          title: s.title, year: s.year, runtime: s.runtime,
-        }
-        insVote.run(Number(insOpt.run(pid, s.id, JSON.stringify(snapshot)).lastInsertRowid), req.user.id)
-      }
+      for (const s of shows) insVote.run(insertOption(pid, s), req.user.id)
       return pid
     })()
     res.status(201).json(loadProposals(db, req.user.householdId, id)[0])

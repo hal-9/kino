@@ -10,6 +10,7 @@ const me = { id: 1, name: 'tuncay', household: { id: 1, name: 'Kino-Crew' } }
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
+  sessionStorage.clear()
   document.body.innerHTML = ''
 })
 
@@ -52,6 +53,7 @@ describe('Programm', () => {
     const { el } = await renderScreen(<Programm />)
     await waitFor(() => el.textContent.includes('Vorschlagen'))
     await act(async () => [...el.querySelectorAll('button')].find((b) => b.textContent === 'Vorschlagen').click())
+    await act(async () => [...el.querySelectorAll('button')].find((b) => b.textContent === 'Weiter').click()) // K13: Auswahl → Senden
     const note = document.querySelector('textarea')
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(note, 'Wer kommt?')
