@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { act } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Wrapped from '../screens/Wrapped.jsx'
 import { renderScreen, waitFor } from './render.jsx'
@@ -10,6 +11,7 @@ const stats = {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   document.body.innerHTML = ''
 })
 
@@ -24,5 +26,45 @@ describe('K21 Wrapped-Kennzahlen', () => {
     expect(tiles.Filmstunden).toContain('7,5')
     expect(tiles.Filmstunden).toContain('1 ohne bekannte Laufzeit')
     expect(tiles.Kinoabende).toBeUndefined() // nur in der Gruppenansicht
+  })
+})
+
+describe('K22 Teilen: Fehler erholen sich', () => {
+  const ctx = new Proxy({}, { get: (t, k) => (k === 'measureText' ? () => ({ width: 10 }) : k === 'createLinearGradient' ? () => ({ addColorStop() {} }) : () => {}) })
+  const clickShare = async (el) => {
+    const btn = [...el.querySelectorAll('button')].find((b) => b.textContent === 'Als Bild teilen')
+    await act(async () => btn.click())
+  }
+
+  it('Export schlägt fehl (toBlob null / kein Canvas) → Meldung, Zahlen bleiben', async () => {
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify(stats)))
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx)
+    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((cb) => cb(null))
+    const { el } = await renderScreen(<Wrapped />)
+    await waitFor(() => el.querySelector('.tile'))
+    await clickShare(el)
+    await waitFor(() => el.querySelector('[role=alert]'))
+    expect(el.querySelector('[role=alert]').textContent).toContain('Bild konnte nicht erstellt werden')
+    expect(el.querySelectorAll('.tile').length).toBeGreaterThan(0)
+  })
+
+  it('Teilen abgebrochen → kein Fehler, kein Download; Teilen nicht möglich → Download', async () => {
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify(stats)))
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx)
+    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((cb) => cb(new Blob(['x'], { type: 'image/png' })))
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    URL.createObjectURL = () => 'blob:x'
+    URL.revokeObjectURL = () => {}
+    const abort = Object.assign(new Error('cancel'), { name: 'AbortError' })
+    vi.stubGlobal('navigator', { ...navigator, canShare: () => true, share: vi.fn(async () => { throw abort }) })
+    const { el } = await renderScreen(<Wrapped />)
+    await waitFor(() => el.querySelector('.tile'))
+    await clickShare(el)
+    await waitFor(() => navigator.share.mock.calls.length === 1)
+    expect(download).not.toHaveBeenCalled()
+    expect(el.querySelector('[role=alert]')).toBeNull()
+    vi.stubGlobal('navigator', { ...navigator, canShare: () => false })
+    await clickShare(el)
+    await waitFor(() => download.mock.calls.length === 1)
   })
 })

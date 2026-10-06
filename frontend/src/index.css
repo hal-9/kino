@@ -323,7 +323,7 @@ h1, h2, h3, p { margin: 0; }
 .hero-num { font-size: 44px; font-weight: 700; letter-spacing: -0.02em; background: var(--primary-grad); -webkit-background-clip: text; background-clip: text; color: transparent; line-height: 1.1; margin: 6px 0 4px; font-variant-numeric: tabular-nums; }
 .hero-sub { font-size: 13px; }
 .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
-.tile { padding: 14px; }
+.tile { padding: 14px; min-width: 0; overflow-wrap: anywhere; }
 .tile-num { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .tile .muted { font-size: 12px; }
 .bars { padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
