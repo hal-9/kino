@@ -1,0 +1,11 @@
+{
+  "name": "kino",
+  "private": true,
+  "workspaces": ["shared", "backend", "frontend"],
+  "scripts": {
+    "dev:backend": "npm run dev -w backend",
+    "dev:frontend": "npm run dev -w frontend",
+    "build": "npm run build -w frontend",
+    "test": "npm test -w shared && npm test -w backend"
+  }
+}

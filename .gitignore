@@ -1,0 +1,13 @@
+node_modules/
+backend/data/
+frontend/dist/
+deploy/frontend-dist/
+deploy/data/
+deploy/.env
+.DS_Store
+fetch/secrets/
+*.pem
+*.key
+*.pfx
+*.apk
+*.xapk

@@ -1,0 +1,24 @@
+{
+  "name": "backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "vitest run",
+    "sync": "node src/sync/run.js"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^11.3.0",
+    "cookie-parser": "^1.4.6",
+    "express": "^4.21.0",
+    "express-rate-limit": "^8.7.0",
+    "shared": "*",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0",
+    "vitest": "^2.1.1"
+  }
+}
