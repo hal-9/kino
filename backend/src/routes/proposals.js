@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireAuth } from '../auth.js'
 import { idempotent } from '../idempotency.js'
 import { eventForProposal, icsCalendar, publicUrl } from '../ics.js'
+import { blocksBooking, optionChanges } from '../changes.js'
 
 const createSchema = z.object({
   movie_id: z.number().int(),
@@ -17,7 +18,7 @@ const ticketSchema = z.object({ ticket_link: link.nullable(), revision })
 const actionSchema = z.object({ revision }).default({})
 
 // Planungsstatus (open/booked/cancelled) ist getrennt von Anwesenheit (Besuche). Erlaubte Übergänge:
-const FROM = { book: ['open'], reschedule: ['booked'], cancel: ['open', 'booked'], reopen: ['booked', 'cancelled'] }
+const FROM = { book: ['open'], reschedule: ['booked'], cancel: ['open', 'booked'], reopen: ['booked', 'cancelled'], review: ['open', 'booked'] }
 // Archiv nach Ereigniszeit: gebuchte Vorstellungen bleiben bis 60 Tage nach Beginn in der Liste, egal wie alt der Vorschlag ist.
 const ARCHIVE_AFTER_MS = 60 * 86400_000
 
@@ -44,11 +45,16 @@ export function loadProposals(db, householdId, id, view = 'active') {
     created_by: p.created_by,
     booked_option_id: p.booked_option_id,
     ticket_link: p.ticket_link,
-    options: opts.all(p.id).map((o) => ({
-      id: o.id,
-      snapshot: JSON.parse(o.snapshot_json),
-      votes: Object.fromEntries(votes.all(o.id).map((v) => [v.user_id, v.value])),
-    })),
+    options: opts.all(p.id).map((o) => {
+      const snapshot = JSON.parse(o.snapshot_json)
+      return {
+        id: o.id,
+        snapshot,
+        votes: Object.fromEntries(votes.all(o.id).map((v) => [v.user_id, v.value])),
+        // K12: aktuelle Abweichungen der Live-Vorstellung (Snapshot selbst bleibt unverändert). Nur für laufende Planung.
+        changes: p.status === 'cancelled' ? [] : optionChanges(db, o, snapshot),
+      }
+    }),
   }))
 }
 
@@ -87,7 +93,7 @@ export function proposalsRouter(db) {
 
   // Bedingter Übergang: nur aus erlaubtem Status und (falls mitgeschickt) aktueller Revision; schreibt Verlauf.
   // Kein Wort über Erstattung: Absagen in Kino storniert keine gekauften Tickets.
-  function transition(req, res, action, schema, set) {
+  function transition(req, res, action, schema, set, extra) {
     const p = own(req, res)
     if (!p) return
     const parsed = schema.safeParse(req.body ?? {})
@@ -97,9 +103,14 @@ export function proposalsRouter(db) {
     if (!FROM[action].includes(p.status)) return res.status(409).json({ error: p.status })
     let detail = {}
     if (d.option_id !== undefined) {
-      const opt = db.prepare('SELECT snapshot_json FROM proposal_options WHERE id = ? AND proposal_id = ?').get(d.option_id, p.id)
+      const opt = db.prepare('SELECT screening_id, snapshot_json FROM proposal_options WHERE id = ? AND proposal_id = ?').get(d.option_id, p.id)
       if (!opt) return res.status(404).json({ error: 'not found' })
-      if (!(Date.parse(JSON.parse(opt.snapshot_json).starts_at) > Date.now())) return res.status(409).json({ error: 'expired' })
+      const snap = JSON.parse(opt.snapshot_json)
+      if (!(Date.parse(snap.starts_at) > Date.now())) return res.status(409).json({ error: 'expired' })
+      // K12: geänderte Live-Daten müssen vor dem Buchen geprüft werden; verschoben/zurückgezogen ist nicht buchbar.
+      const changes = optionChanges(db, { id: d.option_id, screening_id: opt.screening_id }, snap)
+      if (changes.some(blocksBooking)) return res.status(409).json({ error: 'changed', changes })
+      if (changes.some((c) => !c.acknowledged)) return res.status(409).json({ error: 'review required', changes })
       detail = { option_id: d.option_id, ...(p.booked_option_id && action === 'reschedule' ? { from_option_id: p.booked_option_id } : {}) }
     }
     const ok = db.transaction(() => {
@@ -107,6 +118,7 @@ export function proposalsRouter(db) {
       const r = db.prepare(`UPDATE proposals SET ${sql}, revision = revision + 1, ics_seq = ics_seq + 1, updated_at = datetime('now')
         WHERE id = ? AND revision = ?`).run(...args, p.id, p.revision)
       if (!r.changes) return false
+      if (extra) detail = extra(p, req)
       db.prepare('INSERT INTO proposal_events (proposal_id, user_id, action, revision, detail_json) VALUES (?, ?, ?, ?, ?)')
         .run(p.id, req.user.id, action, p.revision + 1, JSON.stringify(detail))
       return true
@@ -180,6 +192,15 @@ export function proposalsRouter(db) {
   // Wieder öffnen: Stimmen bleiben erhalten, Buchung wird aufgehoben.
   router.post('/proposals/:id/reopen', key('reopen'), (req, res) =>
     transition(req, res, 'reopen', actionSchema, () => ({ sql: "status = 'open', booked_option_id = NULL, booked_by = NULL, booked_at = NULL", args: [] })))
+
+  // K12: aktuelle Abweichungen geprüft. Quittung statt Snapshot-Änderung; eine Buchung wird nie automatisch verlegt.
+  router.post('/proposals/:id/changes/ack', key('review'), (req, res) =>
+    transition(req, res, 'review', actionSchema, () => ({ sql: 'status = status', args: [] }), (p, req) => {
+      const ids = loadProposals(db, req.user.householdId, p.id)[0].options.flatMap((o) => o.changes.filter((c) => !c.acknowledged).map((c) => c.id))
+      const ack = db.prepare("UPDATE option_changes SET acknowledged_at = datetime('now'), acknowledged_by = ? WHERE id = ?")
+      for (const id of ids) ack.run(req.user.id, id)
+      return { change_ids: ids }
+    }))
 
   // Link zu den gekauften Tickets (aus der Bestätigungs-Mail); landet im Kalendereintrag.
   router.put('/proposals/:id/ticket', (req, res) => {

@@ -21,7 +21,23 @@ function score(o) {
 const ACTION = { created: 'vorgeschlagen', book: 'gebucht', reschedule: 'umgebucht', cancel: 'abgesagt', reopen: 'wieder geöffnet', ticket: 'Ticket-Link geändert' }
 const stamp = (sql) => new Date(sql.replace(' ', 'T') + 'Z').toLocaleString('de-DE', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })
 // 409 bei Lebenszyklus-Aktionen: jemand anderes war schneller oder der Status passt nicht mehr.
-const conflictText = (e) => (e.code === 'expired' ? 'Diese Vorstellung hat schon begonnen.' : e.status === 409 ? 'Inzwischen von jemand anderem geändert. Bitte prüfen und erneut wählen.' : errorText(e))
+const conflictText = (e) =>
+  e.code === 'expired' ? 'Diese Vorstellung hat schon begonnen.'
+    : e.code === 'review required' ? 'Die Kino-Daten haben sich geändert. Bitte die Änderungen prüfen und bestätigen.'
+    : e.code === 'changed' ? 'Diese Vorstellung wurde verschoben oder abgesetzt und ist so nicht buchbar.'
+    : e.status === 409 ? 'Inzwischen von jemand anderem geändert. Bitte prüfen und erneut wählen.' : errorText(e)
+
+// K12: Abweichung der Live-Daten vom Stand des Vorschlags (Snapshot bleibt unverändert).
+function changeText(c) {
+  const by = c.source ? ` (laut ${c.source})` : ''
+  switch (c.field) {
+    case 'starts_at': return `Neue Zeit: ${when(c.after)}, vorher ${when(c.before)}${by}`
+    case 'cinema': return `Anderes Kino${by}`
+    case 'version': return `Fassung jetzt ${c.after}, vorher ${c.before}${by}`
+    case 'auditorium': return `Saal jetzt ${c.after}, vorher ${c.before}${by}`
+    default: return c.after === 'withdrawn' ? 'Nicht mehr im Programm' : 'Zuletzt nicht im Programm gesehen (unsicher, keine Absage)'
+  }
+}
 
 function Proposal({ p, members, me, history }) {
   const qc = useQueryClient()
@@ -67,6 +83,8 @@ function Proposal({ p, members, me, history }) {
   const saveTicket = useMutation({ mutationFn: () => api.put(`/proposals/${p.id}/ticket`, { ticket_link: link.trim() || null }), onSuccess: () => { setTicketSheet(false); refresh() } })
   const cancel = useMutation({ mutationFn: () => lifecycle('cancel'), ...settled })
   const reopen = useMutation({ mutationFn: () => lifecycle('reopen'), ...settled })
+  const review = useMutation({ mutationFn: () => lifecycle('changes/ack'), ...settled })
+  const unreviewed = p.status !== 'cancelled' && p.options.some((o) => o.changes?.some((c) => !c.acknowledged))
   function confirmCancel() {
     const text = p.status === 'booked'
       ? 'Buchung in Kino absagen? Gekaufte Tickets werden dadurch nicht storniert oder erstattet, das geht nur beim Kino.'
@@ -99,6 +117,11 @@ function Proposal({ p, members, me, history }) {
                 {s.version && <span className={`badge ${s.version === 'DF' ? '' : 'ov'}`}>{s.version}</span>}
               </div>
               <small className="muted">{[s.cinema_name, s.auditorium].filter(Boolean).join(' · ')}</small>
+              {o.changes?.length > 0 && (
+                <ul className="changes" aria-label="Änderungen seit dem Vorschlag">
+                  {o.changes.map((c) => <li key={c.id} className={c.acknowledged ? 'ack' : ''}>⚠ {changeText(c)}{c.acknowledged ? ' · geprüft' : ''}</li>)}
+                </ul>
+              )}
               <div className="opt-votes">
                 {members.map((m) => (
                   <span key={m.id} className={`avatar v-${voteOf(m.id) ?? 'none'}`} role="img" aria-label={`${m.name}: ${SAY[voteOf(m.id)] ?? 'offen'}`} title={`${m.name}: ${SAY[voteOf(m.id)] ?? 'offen'}`}>
@@ -120,6 +143,13 @@ function Proposal({ p, members, me, history }) {
       {voteError && <p className="stale" role="alert">Stimme nicht gespeichert. {errorText(voteError)}</p>}
       <MutationError mutation={cancel} text={conflictText} />
       <MutationError mutation={reopen} text={conflictText} />
+      <MutationError mutation={review} text={conflictText} />
+      {unreviewed && (
+        <p className="stale" role="status">
+          Die Kino-Daten weichen vom Vorschlag ab.{p.status === 'booked' ? ' Die Buchung wird nicht automatisch geändert.' : ' Vor dem Buchen bitte prüfen.'}{' '}
+          <button className="link-btn" disabled={review.isPending} onClick={() => { fresh(); review.mutate() }}>Änderungen geprüft</button>
+        </p>
+      )}
       <div className="sheet-actions">
         {p.status === 'open' && (
           <>

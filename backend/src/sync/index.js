@@ -183,7 +183,14 @@ function mergeRows(db, rows, observedAt) {
      WHERE excluded.observed_at >= screening_observations.observed_at -- ältere Captures drehen nichts zurück
      RETURNING id`
   )
-  const obsId = db.prepare('SELECT id FROM screening_observations WHERE source = ? AND source_key = ?')
+  const obsId = db.prepare('SELECT id, screening_id FROM screening_observations WHERE source = ? AND source_key = ?')
+  // K12: Derselbe Anbieter-Schlüssel zeigt jetzt auf eine andere Vorstellung (Zeit/Film korrigiert) → Umzug protokollieren;
+  // die alte Vorstellung ohne aktive Beobachtung gilt als zurückgezogen (Quelle hat sie ausdrücklich ersetzt).
+  const logMove = db.prepare("INSERT INTO screening_changes (screening_id, field, old_value, new_value, source, changed_at) VALUES (?, 'moved_to', NULL, ?, ?, ?)")
+  const retireOrphan = db.prepare(
+    `UPDATE screenings SET withdrawn_at = ? WHERE id = ? AND withdrawn_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM screening_observations WHERE screening_id = ? AND withdrawn_at IS NULL)`
+  )
   const movieCache = new Map()
   const seen = new Set() // IDs der in diesem Lauf beobachteten screening_observations
   const touched = new Set() // Vorstellungen, deren Felder neu abzuleiten sind
@@ -217,8 +224,13 @@ function mergeRows(db, rows, observedAt) {
       const screeningId = old ? old.id : Number(insShow.run({ ...row, movieId: id, attrs }).lastInsertRowid)
       // capacity undefined = Quelle meldet keine Auslastung; null = gemeldet, aber unbekannt.
       const capacity = row.capacity === undefined ? { capacity: null, capacityAt: null } : { capacity: row.capacity, capacityAt: observedAt }
+      const prior = obsId.get(row.source, key)
       const o = observe.get({ ...row, ...capacity, screeningId, key, attrs, observedAt })
       seen.add(o?.id ?? obsId.get(row.source, key).id)
+      if (o && prior && prior.screening_id !== screeningId) {
+        logMove.run(prior.screening_id, String(screeningId), row.source, observedAt)
+        retireOrphan.run(observedAt, prior.screening_id, prior.screening_id)
+      }
       touched.add(screeningId)
     }
   })()

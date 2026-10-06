@@ -72,3 +72,30 @@ describe('K11 Lebenszyklus im UI', () => {
     await waitFor(() => el.textContent.includes('nicht gefunden'))
   })
 })
+
+describe('K12 Änderungen sichtbar', () => {
+  it('zeigt Unterschiede, Prüfen sendet Quittung mit Revision; 409 review required erklärt sich', async () => {
+    const posts = []
+    const changes = [
+      { id: 1, field: 'auditorium', before: 'Saal 1', after: 'Saal 2', source: 'zoopalast', certainty: 'confirmed', acknowledged: false },
+      { id: 2, field: 'availability', before: 'active', after: 'missing', source: null, certainty: 'uncertain', acknowledged: false },
+    ]
+    vi.stubGlobal('fetch', async (url, opts = {}) => {
+      if (String(url).endsWith('/me')) return json(me)
+      if (opts.method === 'POST') {
+        posts.push({ url: String(url), body: JSON.parse(opts.body) })
+        return String(url).endsWith('/book') ? json({ error: 'review required', changes }, 409) : json(proposal())
+      }
+      return json({ members, proposals: [proposal({ options: [{ id: 9, snapshot: snap, votes: {}, changes }] })] })
+    })
+    const { el } = await renderScreen(<Vorschlaege />, { path: '/vorschlaege', route: '/vorschlaege' })
+    await waitFor(() => el.textContent.includes('Saal jetzt Saal 2, vorher Saal 1 (laut zoopalast)'))
+    expect(el.textContent).toContain('unsicher, keine Absage')
+    await click(el, 'Gebucht')
+    await click(document.body, 'Als gebucht speichern')
+    await waitFor(() => document.body.textContent.includes('Bitte die Änderungen prüfen'))
+    await click(el, 'Änderungen geprüft')
+    await waitFor(() => posts.length === 2)
+    expect(posts[1]).toEqual({ url: '/api/proposals/3/changes/ack', body: { revision: 4 } })
+  })
+})
