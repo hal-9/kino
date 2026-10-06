@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api.js'
 import Sheet from '../components/Sheet.jsx'
 import MovieSheet from '../components/MovieSheet.jsx'
+import MovieHeader from '../components/MovieHeader.jsx'
 
 const dayLabel = (ymd, i) =>
   i === 0 ? 'Heute' : new Date(`${ymd}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric' })
@@ -36,10 +37,7 @@ function MovieCard({ movie, favOnly, showDate, onPropose, onInfo }) {
   const row = (s) => <Row key={s.id} s={s} showDate={showDate} onPropose={() => onPropose(movie, s)} />
   return (
     <section className="group">
-      <h2 className="group-title">
-        <button className="title-btn" onClick={() => onInfo(movie.id)}>{movie.title}</button>
-        <span className="n">{[movie.year, movie.runtime && `${movie.runtime} min`].filter(Boolean).join(' · ')}</span>
-      </h2>
+      <MovieHeader movie={movie} onInfo={onInfo} />
       <div className="card">
         {fav.map(row)}
         {rest.length > 0 && fav.length > 0 && (

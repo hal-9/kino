@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api.js'
 import Sheet from '../components/Sheet.jsx'
 import MovieSheet from '../components/MovieSheet.jsx'
+import MovieHeader from '../components/MovieHeader.jsx'
 import { initial } from '../components/Header.jsx'
 
 const MARK = { yes: '✓', maybe: '?', no: '✗' }
@@ -34,10 +35,8 @@ function Proposal({ p, members, me }) {
 
   return (
     <section className="group">
-      <h2 className="group-title">
-        <button className="title-btn" onClick={() => setInfo(true)}>{p.movie.title}</button>
-        <span className="n">{p.status === 'booked' ? '✓ gebucht' : 'offen'}</span>
-      </h2>
+      <MovieHeader movie={p.movie} onInfo={() => setInfo(true)} />
+      <p className="status-line">{p.status === 'booked' ? '✓ gebucht' : 'offen'}</p>
       <div className="card">
         {p.note && <p className="note">{p.note}</p>}
         {p.options.map((o) => {

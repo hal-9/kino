@@ -397,8 +397,15 @@ textarea.field { min-height: 72px; resize: vertical; font-family: inherit; }
 .mini { height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; text-decoration: none; }
 .mini.primary { background: var(--primary-dim); color: var(--primary); border-color: transparent; }
 .mini:active { transform: scale(0.97); }
-.title-btn { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: left; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
-.title-btn::after { content: ' ⓘ'; opacity: 0.5; }
+/* Filmkopf: groß und als Button erkennbar */
+.movie-btn { display: flex; align-items: center; gap: 12px; width: 100%; margin-bottom: 8px; padding: 8px 12px 8px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); text-align: left; box-shadow: var(--shadow); }
+.movie-btn:active { background: var(--surface2); transform: scale(0.99); }
+.movie-thumb { width: 40px; height: 60px; object-fit: cover; border-radius: 6px; flex: none; background: var(--surface2); }
+.movie-btn-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-left: 4px; }
+.movie-btn-text strong { font-family: var(--font-display); font-size: 19px; line-height: 1.2; font-weight: 700; }
+.movie-btn-text small { color: var(--muted); font-size: 13px; }
+.movie-btn-chev { width: 22px; height: 22px; flex: none; fill: none; stroke: var(--primary); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.status-line { font-size: 12px; font-weight: 700; color: var(--primary); margin: -2px 4px 8px; text-transform: uppercase; letter-spacing: 0.04em; }
 .movie-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 12px; }
 .movie-poster { width: 96px; border-radius: 10px; flex: none; box-shadow: var(--shadow); }
 .movie-overview { font-size: 14px; line-height: 1.5; margin-bottom: 12px; }
