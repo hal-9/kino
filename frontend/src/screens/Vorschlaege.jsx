@@ -128,6 +128,7 @@ export default function Vorschlaege() {
   const { id } = useParams()
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: () => api.get('/me') })
   const { data, isLoading } = useQuery({ queryKey: ['proposals'], queryFn: () => api.get('/proposals'), refetchInterval: 10_000 })
+  if (!data && !isLoading) return <p className="muted">Vorschläge konnten nicht geladen werden.</p>
   if (isLoading || !me) return <p className="muted">Lädt…</p>
   const list = data.proposals.filter((p) => !id || p.id === Number(id))
   return (

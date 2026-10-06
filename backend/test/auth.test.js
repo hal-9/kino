@@ -64,6 +64,18 @@ describe('auth', () => {
     expect(res.status).toBe(413)
   })
 
+  it('zwei getrennte Cookie-Jars authentifizieren unabhängig (Logout des einen lässt den anderen)', async () => {
+    const a = request.agent(app)
+    const b = request.agent(app)
+    await a.post('/api/login').send(users[0]).expect(200)
+    await b.post('/api/login').send(users[1]).expect(200)
+    expect((await a.get('/api/me')).body.name).toBe('tuncay')
+    expect((await b.get('/api/me')).body.name).toBe('kim')
+    await a.post('/api/logout').expect(204)
+    expect((await a.get('/api/me')).status).toBe(401)
+    expect((await b.get('/api/me')).body.name).toBe('kim')
+  })
+
   it('logout löscht die Session', async () => {
     const cookie = await loginCookie(app, users[0])
     expect((await request(app).post('/api/logout').set('Cookie', cookie)).status).toBe(204)
