@@ -69,6 +69,8 @@ export function proposalsRouter(db) {
       )
       .all(movie_id, ...ids)
     if (shows.length !== ids.length) return res.status(422).json({ error: 'validation failed' })
+    // Beim Absenden neu prüfen: inzwischen begonnene Vorstellungen sind nicht mehr wählbar.
+    if (shows.some((s) => !(Date.parse(s.starts_at) > Date.now()))) return res.status(409).json({ error: 'expired' })
 
     const id = db.transaction(() => {
       const pid = Number(
@@ -111,9 +113,9 @@ export function proposalsRouter(db) {
     const parsed = bookSchema.safeParse(req.body)
     if (!parsed.success) return res.status(422).json({ error: 'validation failed' })
     if (p.status === 'cancelled') return res.status(409).json({ error: 'cancelled' })
-    if (!db.prepare('SELECT 1 FROM proposal_options WHERE id = ? AND proposal_id = ?').get(parsed.data.option_id, p.id)) {
-      return res.status(404).json({ error: 'not found' })
-    }
+    const opt = db.prepare('SELECT snapshot_json FROM proposal_options WHERE id = ? AND proposal_id = ?').get(parsed.data.option_id, p.id)
+    if (!opt) return res.status(404).json({ error: 'not found' })
+    if (!(Date.parse(JSON.parse(opt.snapshot_json).starts_at) > Date.now())) return res.status(409).json({ error: 'expired' })
     db.prepare(
       `UPDATE proposals SET status = 'booked', booked_option_id = ?, booked_by = ?, booked_at = datetime('now'), updated_at = datetime('now'),
        ticket_link = COALESCE(?, ticket_link) WHERE id = ?`

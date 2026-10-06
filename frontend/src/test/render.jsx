@@ -36,9 +36,9 @@ export async function renderScreen(element, { path = '/', route = '/' } = {}) {
 
 // Wartet, bis cond() wahr ist (Query-Auflösung).
 export async function waitFor(cond, ms = 1000) {
-  const end = Date.now() + ms
+  const end = performance.now() + ms
   while (!cond()) {
-    if (Date.now() > end) throw new Error('waitFor timeout')
+    if (performance.now() > end) throw new Error('waitFor timeout')
     await act(() => new Promise((r) => setTimeout(r, 10)))
   }
 }

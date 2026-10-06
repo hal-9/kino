@@ -26,11 +26,7 @@ export function keyByAlias(ctx, name) {
   return slugify(n)
 }
 
-export function addDays(ymd, n) {
-  const d = new Date(`${ymd}T12:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + n)
-  return d.toISOString().slice(0, 10)
-}
+export { addDays } from 'shared'
 
 export const decodeEntities = (s) =>
   s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'")

@@ -6,11 +6,34 @@ export function berlinOffsetMinutes(date) {
   return m ? -Number(m[1]) * 60 : 0
 }
 
-// '2026-10-13','20:15' → '2026-10-13T20:15:00+02:00'
+// Echtes Kalenderdatum im Format YYYY-MM-DD (Schaltjahre, keine Überläufe wie 02-30).
+export function isValidYmd(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s))) return false
+  const [y, m, d] = s.split('-').map(Number)
+  const t = new Date(Date.UTC(y, m - 1, d))
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d
+}
+
+// Berliner Kalenderdatum eines Zeitpunkts, unabhängig von Server-/Gerätezeitzone.
+export const berlinYmd = (date = new Date()) => date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+
+export function addDays(ymd, n) {
+  const d = new Date(`${ymd}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+// '2026-10-13','20:15' → '2026-10-13T20:15:00+02:00' mit dem Offset der tatsächlichen Ortszeit.
+// Frühjahrslücke (keine passende Ortszeit) und doppelte Herbststunde (zwei) sind ohne Provider-Offset
+// nicht eindeutig → null; Aufrufer verwerfen die Zeile statt sie still zu verschieben.
 export function berlinIso(dateYmd, hhmm) {
+  const t = /^(\d\d):(\d\d)$/.exec(hhmm ?? '')
+  if (!isValidYmd(dateYmd) || !t || Number(t[1]) > 23 || Number(t[2]) > 59) return null
   const [y, m, d] = dateYmd.split('-').map(Number)
-  const probe = new Date(Date.UTC(y, m - 1, d, 12)) // Mittag, um DST-Grenzen zu vermeiden
-  const offMin = -berlinOffsetMinutes(probe)
+  const wall = Date.UTC(y, m - 1, d, Number(t[1]), Number(t[2]))
+  const fits = [60, 120].filter((off) => -berlinOffsetMinutes(new Date(wall - off * 60_000)) === off)
+  if (fits.length !== 1) return null
+  const offMin = fits[0]
   const sign = offMin >= 0 ? '+' : '-'
   const a = Math.abs(offMin)
   return `${dateYmd}T${hhmm}:00${sign}${String((a / 60) | 0).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`

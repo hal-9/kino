@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { parseOrderText } from 'shared'
+import { berlinYmd, parseOrderText } from 'shared'
 import { api } from '../api.js'
 import Sheet from '../components/Sheet.jsx'
 
-const today = () => new Date().toLocaleDateString('sv-SE')
+const today = () => berlinYmd()
 const fmt = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'numeric', year: 'numeric' })
 const stars = (r) => '★'.repeat(Math.floor(r)) + (r % 1 ? '½' : '')
 

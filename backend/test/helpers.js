@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import bcrypt from 'bcrypt'
 import request from 'supertest'
+import { vi } from 'vitest'
 import { getDb, resetDb } from '../src/db.js'
 import { runMigrations } from '../src/migrate.js'
 import { createApp } from '../src/app.js'
@@ -34,4 +35,10 @@ export function setupTestApp(deps = {}) {
 export async function loginCookie(app, { email, password }) {
   const res = await request(app).post('/api/login').send({ email, password })
   return res.headers['set-cookie'][0]
+}
+
+// Kontrollierbare Uhr (nur Date; Session-Ablauf, Vergangen/Zukunft): setNow(iso) friert ein, vi.useRealTimers() im afterEach löst.
+export function setNow(iso) {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(iso))
 }

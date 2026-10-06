@@ -1,9 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import request from 'supertest'
-import { setupTestApp, loginCookie } from './helpers.js'
+import { setupTestApp, loginCookie, setNow } from './helpers.js'
 import { syncRatings, parseRss } from '../src/letterboxd.js'
 import { enrich } from '../src/tmdb.js'
 
@@ -22,11 +22,15 @@ describe('Besuche + Letterboxd', () => {
     shows = ['2020-10-04T20:00:00+02:00', '2020-10-05T20:00:00+02:00'].map((t) => Number(ins.run(movieId, t).lastInsertRowid))
   })
 
+  afterEach(() => vi.useRealTimers())
+
   const post = (body, cookie = c1) => request(app).post('/api/visits').set('Cookie', cookie).send(body)
 
   it('Pending: gebuchte, vergangene Vorstellung ohne eigenen Besuch → Eintrag aus Vorschlag', async () => {
+    setNow('2020-10-01T10:00:00Z')
     const p = (await request(app).post('/api/proposals').set('Cookie', c1).send({ movie_id: movieId, screening_ids: shows })).body
-    await request(app).post(`/api/proposals/${p.id}/book`).set('Cookie', c1).send({ option_id: p.options[0].id })
+    await request(app).post(`/api/proposals/${p.id}/book`).set('Cookie', c1).send({ option_id: p.options[0].id }).expect(200)
+    setNow('2020-10-10T10:00:00Z')
     const pend = (await request(app).get('/api/visits/pending').set('Cookie', c2)).body.pending
     expect(pend).toHaveLength(1)
     const res = await post({ proposal_id: p.id, watched_on: '2020-10-04', row: '9', seats: '11, 12', companions: [users.length ? 1 : 0, 999] }, c2)
@@ -39,9 +43,11 @@ describe('Besuche + Letterboxd', () => {
   })
 
   it('Auto-Besuch für alle ✓-Wähler nach Ende der Vorstellung, gelöscht bleibt gelöscht', async () => {
+    setNow('2020-10-01T10:00:00Z')
     const p = (await request(app).post('/api/proposals').set('Cookie', c1).send({ movie_id: movieId, screening_ids: shows })).body
     await request(app).put(`/api/proposals/${p.id}/votes/${p.options[0].id}`).set('Cookie', c2).send({ value: 'yes' })
-    await request(app).post(`/api/proposals/${p.id}/book`).set('Cookie', c1).send({ option_id: p.options[0].id })
+    await request(app).post(`/api/proposals/${p.id}/book`).set('Cookie', c1).send({ option_id: p.options[0].id }).expect(200)
+    setNow('2020-10-10T10:00:00Z')
     const list = (await request(app).get('/api/visits').set('Cookie', c1)).body.visits
     expect(list).toHaveLength(2)
     const mine = list.find((v) => v.user_id === 1)
@@ -53,8 +59,9 @@ describe('Besuche + Letterboxd', () => {
 
   it('Zukünftige Buchung erzeugt noch keinen Besuch', async () => {
     db.prepare("UPDATE screenings SET starts_at = '2099-10-04T20:00:00+02:00' WHERE id = ?").run(shows[0])
+    setNow('2020-10-01T10:00:00Z')
     const p = (await request(app).post('/api/proposals').set('Cookie', c1).send({ movie_id: movieId, screening_ids: shows })).body
-    await request(app).post(`/api/proposals/${p.id}/book`).set('Cookie', c1).send({ option_id: p.options.find((o) => o.snapshot.starts_at.startsWith('2099')).id })
+    await request(app).post(`/api/proposals/${p.id}/book`).set('Cookie', c1).send({ option_id: p.options.find((o) => o.snapshot.starts_at.startsWith('2099')).id }).expect(200)
     expect((await request(app).get('/api/visits').set('Cookie', c1)).body.visits).toHaveLength(0)
   })
 

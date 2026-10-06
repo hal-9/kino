@@ -1,11 +1,8 @@
 import { Router } from 'express'
-import { berlinIso, normTitle } from 'shared'
+import { addDays, berlinIso, berlinYmd, isValidYmd, normTitle } from 'shared'
 import { requireAuth } from '../auth.js'
-import { addDays } from '../sync/util.js'
 
 const VERSIONS = { ov: ['OV', 'OmU', 'OmeU'], df: ['DF'] }
-const YMD = /^\d{4}-\d{2}-\d{2}$/
-const berlinToday = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
 
 export function programRouter(db) {
   const router = Router()
@@ -13,14 +10,16 @@ export function programRouter(db) {
 
   router.get('/program', (req, res) => {
     const { q, date, version, from, to } = req.query
-    for (const v of [date, from, to]) if (v && !YMD.test(v)) return res.status(422).json({ error: 'validation failed' })
+    for (const v of [date, from, to]) if (v !== undefined && !isValidYmd(v)) return res.status(422).json({ error: 'validation failed' })
+    if (from && to && from > to) return res.status(422).json({ error: 'validation failed' })
+    const now = Date.now()
     const first = date ?? from
-    const last = date ?? to ?? addDays(first ?? berlinToday(), 13)
+    const last = date ?? to ?? addDays(first ?? berlinYmd(new Date(now)), 13)
     const where = ['datetime(s.starts_at) < datetime(?)']
     const args = [berlinIso(addDays(last, 1), '00:00')]
-    // Ohne Datum: ab jetzt, nicht ab Mitternacht.
+    // Nur kommende Vorstellungen, auch bei explizitem Datum (vergangene sind nicht mehr wählbar).
     where.push('datetime(s.starts_at) >= datetime(?)')
-    args.push(first ? berlinIso(first, '00:00') : new Date().toISOString())
+    args.push(new Date(Math.max(now, first ? Date.parse(berlinIso(first, '00:00')) : 0)).toISOString())
     if (q) {
       where.push('(m.norm_title LIKE ? OR lower(m.title) LIKE ?)')
       args.push(`%${normTitle(q)}%`, `%${String(q).toLowerCase()}%`)
@@ -68,8 +67,8 @@ export function programRouter(db) {
 
   router.get('/program/days', (req, res) => {
     const days = db
-      .prepare(`SELECT DISTINCT substr(starts_at, 1, 10) AS d FROM screenings WHERE datetime(starts_at) >= datetime('now') ORDER BY d`)
-      .all()
+      .prepare(`SELECT DISTINCT substr(starts_at, 1, 10) AS d FROM screenings WHERE datetime(starts_at) >= datetime(?) ORDER BY d`)
+      .all(new Date().toISOString())
       .map((r) => r.d)
     res.json({ days })
   })

@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { addDays, berlinYmd } from 'shared'
 import { api } from '../api.js'
 import Sheet from '../components/Sheet.jsx'
 import MovieSheet from '../components/MovieSheet.jsx'
 import MovieHeader from '../components/MovieHeader.jsx'
 
-const dayLabel = (ymd, i) =>
-  i === 0 ? 'Heute' : new Date(`${ymd}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric' })
+// Heute/Morgen nach Berliner Kalenderdatum, nicht nach Position oder Gerätezeitzone.
+const dayLabel = (ymd, today) =>
+  ymd === today ? 'Heute' : ymd === addDays(today, 1) ? 'Morgen' : new Date(`${ymd}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric' })
 const time = (iso) => iso.slice(11, 16)
 const dateShort = (iso) => new Date(`${iso.slice(0, 10)}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'numeric' })
 
@@ -67,6 +69,8 @@ export default function Programm() {
     onSuccess: (p) => { qc.invalidateQueries({ queryKey: ['proposals'] }); setDraft(null); setNote(''); navigate(`/vorschlaege/${p.id}`) },
   })
 
+  const closeDraft = () => { setDraft(null); create.reset() }
+
   useEffect(() => {
     const t = setTimeout(() => setDebounced(q.trim()), 300)
     return () => clearTimeout(t)
@@ -98,8 +102,8 @@ export default function Programm() {
       <input className="field" type="search" placeholder="Film suchen…" value={q} onChange={(e) => setQ(e.target.value)} />
       {!searching && (
         <div className="chips-row">
-          {dayList.slice(0, 14).map((d, i) => (
-            <button key={d} className={`chip${d === activeDay ? ' active' : ''}`} onClick={() => setDay(d)}>{dayLabel(d, i)}</button>
+          {dayList.slice(0, 14).map((d) => (
+            <button key={d} className={`chip${d === activeDay ? ' active' : ''}`} onClick={() => setDay(d)}>{dayLabel(d, berlinYmd())}</button>
           ))}
         </div>
       )}
@@ -113,14 +117,17 @@ export default function Programm() {
       )}
       {movies.map((m) => <MovieCard key={m.id} movie={m} favOnly={favOnly} showDate={searching} onPropose={(movie, screening) => setDraft({ movie, screening })} onInfo={setInfo} />)}
       <MovieSheet movieId={info} onClose={() => setInfo(null)} />
-      <Sheet open={draft != null} onClose={() => setDraft(null)}>
+      <Sheet open={draft != null} onClose={closeDraft}>
         {draft && (
           <>
             <h3>{draft.movie.title} vorschlagen</h3>
             <p className="sub">{dateShort(draft.screening.starts_at)} · {time(draft.screening.starts_at)} · {draft.screening.cinema_name}{draft.screening.version ? ` · ${draft.screening.version}` : ''}</p>
             <textarea className="field" placeholder="Notiz (optional)" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} />
+            {create.isError && (
+              <p className="stale">{create.error.status === 409 ? 'Diese Vorstellung hat schon begonnen. Bitte eine andere wählen.' : 'Senden fehlgeschlagen. Bitte erneut versuchen.'}</p>
+            )}
             <div className="sheet-actions">
-              <button className="btn" onClick={() => setDraft(null)}>Abbrechen</button>
+              <button className="btn" onClick={closeDraft}>Abbrechen</button>
               <button className="btn primary" disabled={create.isPending} onClick={() => create.mutate()}>Vorschlag senden</button>
             </div>
           </>

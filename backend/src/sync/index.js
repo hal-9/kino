@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { normTitle, slugify } from 'shared'
+import { berlinYmd, normTitle, slugify } from 'shared'
 import { createFetch } from './util.js'
 import * as kinoheld from './kinoheld.js'
 import * as yorck from './yorck.js'
@@ -55,7 +55,6 @@ function loadCinemas(db) {
   )
 }
 
-const minuteKey = (iso) => iso.slice(0, 16)
 const samePrefix = (a, b) => {
   const n = Math.min(12, a.length, b.length)
   return n >= 4 && a.slice(0, n) === b.slice(0, n)
@@ -72,7 +71,7 @@ function mergeRows(db, rows) {
   const insCinema = db.prepare('INSERT INTO cinemas (key, name) VALUES (?, ?)')
   const candidates = db.prepare(
     `SELECT s.*, m.norm_title FROM screenings s JOIN movies m ON m.id = s.movie_id
-     WHERE s.cinema_key = ? AND s.starts_at LIKE ? || '%'`
+     WHERE s.cinema_key = ? AND datetime(s.starts_at) = datetime(?)`
   )
   const insShow = db.prepare(
     `INSERT INTO screenings (cinema_key, movie_id, starts_at, version, auditorium, attrs_json, ticket_url, source, source_id)
@@ -105,7 +104,7 @@ function mergeRows(db, rows) {
       if (!hasCinema.get(row.cinemaKey)) insCinema.run(row.cinemaKey, row.cinemaName)
       const id = movieId(row)
       const norm = normTitle(row.title)
-      const old = candidates.all(row.cinemaKey, minuteKey(row.startsAt)).find((s) => s.movie_id === id || samePrefix(s.norm_title, norm))
+      const old = candidates.all(row.cinemaKey, row.startsAt).find((s) => s.movie_id === id || samePrefix(s.norm_title, norm))
       const claim = (sid) => {
         if (row.source === 'kinoheld') return
         const k = `${row.cinemaKey}|${row.startsAt.slice(0, 10)}`
@@ -155,7 +154,7 @@ export async function runSync(db, { fetch = createFetch(), log = console.log, ad
   if (running) return { skipped: true }
   running = true
   try {
-    today ??= new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+    today ??= berlinYmd()
     seedCinemas(db)
     const ctx = { fetch, log, today, cinemas: loadCinemas(db) }
 
@@ -194,7 +193,10 @@ export async function runSync(db, { fetch = createFetch(), log = console.log, ad
     // Basis zuerst, Overlays danach (Reihenfolge der Keys in ADAPTERS).
     for (const [name, mod] of Object.entries(adapters)) {
       try {
-        const r = await mod.fetchShows(ctx)
+        const fetched = await mod.fetchShows(ctx)
+        // Unaufgelöste Ortszeiten (DST-Lücke/-Doppelstunde, ungültige Daten) nicht raten, sondern verwerfen.
+        const r = fetched.filter((x) => x.startsAt)
+        if (r.length < fetched.length) log(`${name}: ${fetched.length - r.length} Vorstellungen ohne eindeutige Zeit verworfen`)
         if (r.length < minRows(mod)) throw new Error(`nur ${r.length} Vorstellungen (erwartet ≥ ${minRows(mod)})`)
         rows.push(...r)
         ok.push(name)
