@@ -13,6 +13,8 @@ export default function Einstellungen() {
   const qc = useQueryClient()
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: () => api.get('/me') })
   const sources = useQuery({ queryKey: ['sources'], queryFn: () => api.get('/sources') })
+  const coord = useQuery({ queryKey: ['coordination'], queryFn: () => api.get('/stats/coordination?days=90') })
+  const c = coord.data
 
   const settings = useQuery({ queryKey: ['settings'], queryFn: () => api.get('/settings') })
   const [lb, setLb] = useState('')
@@ -76,6 +78,24 @@ export default function Einstellungen() {
               <button className="btn" onClick={resync}>Jetzt abgleichen</button>
             </>
           )}
+        </div>
+      </section>
+      <section className="group">
+        <h2 className="group-title">Planung · letzte {c?.days ?? 90} Tage</h2>
+        <div className="card pad">
+          <QueryError query={coord} label="Kennzahlen" />
+          {c && (
+            <ul className="sub" aria-label="Planungs-Kennzahlen">
+              <li>Vorschläge: {c.proposals.created} angelegt · {c.proposals.booked} gebucht · {c.proposals.cancelled} abgesagt · {c.proposals.open} offen</li>
+              <li>Gebucht von entschiedenen: {c.proposals.booked_share_of_decided == null ? '–' : `${Math.round(c.proposals.booked_share_of_decided * 100)} %`}</li>
+              <li>Zeit bis zur Buchung (Median): {c.decision_hours_median == null ? '–' : `${String(c.decision_hours_median).replace('.', ',')} h (aus ${c.decided_with_time})`}</li>
+              <li>Offene Abstimmungen: {c.open_waiting.proposals} warten auf {c.open_waiting.unanswered_people} Antwort(en)</li>
+              <li>Quellen mit Fehler: {c.sources.failing.length ? c.sources.failing.join(', ') : 'keine'} (von {c.sources.total})</li>
+              <li>Geprüfte Programmänderungen: {c.changes_reviewed}</li>
+              <li>Besuche: {c.visits.confirmed} bestätigt · {c.visits.manual} selbst eingetragen · {c.visits.inferred + c.visits.legacy} abgeleitet, unbestätigt</li>
+            </ul>
+          )}
+          <p className="sub">Nur Zahlen dieses Haushalts aus vorhandenen Daten, ohne Notizen oder Tickets. Kleine Zahlen zeigen Tendenzen, keine Ursachen.</p>
         </div>
       </section>
       <section className="group">

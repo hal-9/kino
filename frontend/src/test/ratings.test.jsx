@@ -33,6 +33,7 @@ describe('K20 Bewertungen', () => {
       const u = String(url)
       if (opts.method === 'POST') { posts.push(u); return json({ error: 'too many requests' }, 429) }
       if (u.endsWith('/me')) return json(me)
+      if (u.includes('/stats/')) return json({ error: 'not found' }, 404)
       if (u.endsWith('/settings')) return json({ letterboxd_user: 'tuncay', letterboxd: { attempt_at: '2026-10-06T10:00:00Z', error: null, from: '2026-09-01', to: '2026-10-04', ambiguous: 1, other_account: 0 } })
       return json({ sources: [] })
     })

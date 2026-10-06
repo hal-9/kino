@@ -1303,5 +1303,53 @@
     "next_ready": [
       "K36"
     ]
+  },
+  "K36": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "scope": "Metric definitions + household-scoped summary endpoint + display. The usability session with a non-developer member (AC02/AC03) cannot be done by an agent and is not run.",
+    "commands": {
+      "npm test": "shared 38/38, backend 154/154, frontend 77/77; exit 0",
+      "npm run build": "exit 0"
+    },
+    "modified": [
+      "backend/src/routes/stats.js (GET /stats/coordination?days=1..365, default 90)",
+      "backend/test/coordination.test.js (new)",
+      "frontend/src/screens/Einstellungen.jsx ('Planung · letzte 90 Tage' section)",
+      "frontend/src/test/coordination.test.jsx (new); frontend/src/test/ratings.test.jsx (stub answers /stats/ with 404)"
+    ],
+    "definitions (K36-AC01)": {
+      "window": "proposals whose created_at lies in the last `days` days (server clock, UTC timestamps)",
+      "proposals.created/open/booked/cancelled": "current planning status of those proposals; cancelled kept separate (also when cancelled after booking)",
+      "booked_share_of_decided": "booked / (booked + cancelled); open proposals excluded from the denominator; null when nothing decided",
+      "decision_hours_median": "median hours from proposal creation to its first 'book' event (proposal_events); decided_with_time = n",
+      "open_waiting": "all currently open proposals of the household (not windowed): count with at least one participant (fixed cohort, K15) without any vote, and the number of such unanswered participants",
+      "sources.failing": "source_health rows never successful or whose last error is newer than the last success; shown by name, never dropped from totals",
+      "changes_reviewed": "acknowledged live-screening changes (K12) on this household's options within the window = manual screening corrections",
+      "visits": "visits with watched_on in the window, split by attendance; inferred + legacy reported as unconfirmed, never merged into confirmed",
+      "sensitive-data exclusions": "only counts and source names; no titles, notes, member names, ticket/feed links, schedules; computed on request from existing tables (no new event log, so no extra retention); household-scoped; no external analytics"
+    },
+    "acceptance": {
+      "K36-AC01": "passed (definitions above; test asserts counts, denominator, median, unanswered cohort, household isolation, no titles/names in payload)",
+      "K36-AC02": "not run (needs a real non-developer member session: find next outing, vote, recover a failed save, retrieve tickets, no narration)",
+      "K36-AC03": "not run (no observation session held; nothing recorded)",
+      "K36-AC04": "passed (failing source listed by name with total; test)",
+      "K36-AC05": "passed (no external analytics/tracking added; attendance not inflated - unconfirmed shown separately)"
+    },
+    "decisions": [
+      "No new events table: every metric derives from existing domain timestamps.",
+      "'Useful matches/alerts' not measurable yet: matcher (K28) and radar (K29) are not built."
+    ],
+    "deferred": [
+      "usability session protocol execution and recorded confusion log (AC02/AC03) - owner action",
+      "match/alert usefulness metrics after K28/K29"
+    ],
+    "gaps": [
+      "K36-AC02/AC03 manual sessions: not run"
+    ],
+    "next_ready": [
+      "K27",
+      "K37"
+    ]
   }
 }

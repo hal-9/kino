@@ -62,5 +62,58 @@ export function statsRouter(db) {
     res.json(out)
   })
 
+  // K36: Nutzen der Planung aus vorhandenen Zeitstempeln, nur Haushalt, nur Zahlen (keine Notizen/Tickets/Namen).
+  // Fenster = Vorschläge, die in den letzten `days` Tagen angelegt wurden (Standard 90).
+  router.get('/stats/coordination', (req, res) => {
+    const days = Number(req.query.days ?? 90)
+    if (!Number.isInteger(days) || days < 1 || days > 365) return res.status(422).json({ error: 'validation failed' })
+    const hid = req.user.householdId
+    const since = new Date(Date.now() - days * 86400_000).toISOString()
+    const props = db
+      .prepare(
+        `SELECT p.status, p.created_at,
+           (SELECT MIN(e.created_at) FROM proposal_events e WHERE e.proposal_id = p.id AND e.action = 'book') AS first_book
+         FROM proposals p WHERE p.household_id = ? AND datetime(p.created_at) >= datetime(?)`
+      )
+      .all(hid, since)
+    const count = (st) => props.filter((p) => p.status === st).length
+    const booked = count('booked'), cancelled = count('cancelled')
+    const hours = props
+      .filter((p) => p.first_book)
+      .map((p) => (Date.parse(`${p.first_book.replace(' ', 'T')}Z`) - Date.parse(`${p.created_at.replace(' ', 'T')}Z`)) / 3600_000)
+      .sort((a, b) => a - b)
+    const median = hours.length ? Math.round(((hours[(hours.length - 1) >> 1] + hours[hours.length >> 1]) / 2) * 10) / 10 : null
+    // Offene Vorschläge (unabhängig vom Fenster): Teilnehmende ohne irgendeine Stimme.
+    const waiting = db
+      .prepare(
+        `SELECT p.id, COUNT(pp.user_id) AS unanswered FROM proposals p JOIN proposal_participants pp ON pp.proposal_id = p.id
+         WHERE p.household_id = ? AND p.status = 'open'
+           AND NOT EXISTS (SELECT 1 FROM votes v JOIN proposal_options o ON o.id = v.option_id WHERE o.proposal_id = p.id AND v.user_id = pp.user_id)
+         GROUP BY p.id`
+      )
+      .all(hid)
+    const sources = db.prepare('SELECT source, last_ok_at, last_error_at FROM source_health ORDER BY source').all()
+    const failing = sources.filter((s) => !s.last_ok_at || (s.last_error_at && s.last_error_at > s.last_ok_at)).map((s) => s.source)
+    const reviewed = db
+      .prepare(
+        `SELECT COUNT(*) n FROM option_changes c JOIN proposal_options o ON o.id = c.option_id JOIN proposals p ON p.id = o.proposal_id
+         WHERE p.household_id = ? AND c.acknowledged_at IS NOT NULL AND datetime(c.acknowledged_at) >= datetime(?)`
+      )
+      .get(hid, since).n
+    const attendance = Object.fromEntries(
+      db.prepare(`SELECT attendance, COUNT(*) n FROM visits WHERE household_id = ? AND watched_on >= ? GROUP BY attendance`).all(hid, since.slice(0, 10)).map((r) => [r.attendance, r.n])
+    )
+    res.json({
+      days,
+      proposals: { created: props.length, open: count('open'), booked, cancelled, booked_share_of_decided: booked + cancelled ? booked / (booked + cancelled) : null },
+      decision_hours_median: median,
+      decided_with_time: hours.length,
+      open_waiting: { proposals: waiting.length, unanswered_people: waiting.reduce((n, w) => n + w.unanswered, 0) },
+      sources: { total: sources.length, failing },
+      changes_reviewed: reviewed,
+      visits: { confirmed: attendance.confirmed ?? 0, manual: attendance.manual ?? 0, inferred: attendance.inferred ?? 0, legacy: attendance.legacy ?? 0 },
+    })
+  })
+
   return router
 }
