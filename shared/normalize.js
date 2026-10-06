@@ -61,3 +61,7 @@ export function versionFromLanguages(audio, subtitle) {
   if (audio && !isDe(audio) && !subtitle) return 'OV'
   return subtitle ? 'OmU' : null
 }
+
+// K30: Saal innerhalb eines Kinos: nur Groß-/Kleinschreibung, Leer- und Satzzeichen vereinheitlichen.
+// Bewusst kein Gleichsetzen von „Kino 1“ und „Saal 1“ (nicht verifiziert) – unbekannt wird nicht geraten.
+export const normRoom = (name) => String(name ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()

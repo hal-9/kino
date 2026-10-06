@@ -56,3 +56,14 @@ describe('isValidYmd / berlinYmd / addDays', () => {
     expect(addDays('2026-10-31', 1)).toBe('2026-11-01')
   })
 })
+
+import { normRoom } from './normalize.js'
+describe('K30 normRoom', () => {
+  it('vereinheitlicht Schreibweise, setzt aber keine unbestätigten Aliase gleich', () => {
+    expect(normRoom('  Saal  1 ')).toBe('saal 1')
+    expect(normRoom('SAAL-1')).toBe('saal 1')
+    expect(normRoom('Kino 1')).not.toBe(normRoom('Saal 1'))
+    expect(normRoom('Großer Saal')).toBe('großer saal')
+    expect(normRoom('')).toBe('')
+  })
+})

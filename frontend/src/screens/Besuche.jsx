@@ -106,6 +106,55 @@ function VisitSheet({ open, onClose, members, me, init, visit }) {
   )
 }
 
+// K30: persönliche Notizen zu genau diesem Saal in diesem Kino (eigene + im Haushalt geteilte), mit Datum/Platz.
+// Getrennt von Anbieter-Angaben; keine Sitzplan- oder Bestplatz-Aussage.
+function RoomNotes({ v, mine }) {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const key = ['roomNotes', v.snapshot.cinema_key, v.auditorium]
+  const q = new URLSearchParams({ cinema_key: v.snapshot.cinema_key, room: v.auditorium })
+  const notes = useQuery({ queryKey: key, queryFn: () => api.get(`/rooms/notes?${q}`), enabled: open })
+  const [text, setText] = useState('')
+  const [shared, setShared] = useState(false)
+  const done = () => { setText(''); qc.invalidateQueries({ queryKey: ['roomNotes'] }) }
+  const add = useMutation({
+    mutationFn: () => api.post('/rooms/notes', { cinema_key: v.snapshot.cinema_key, room: v.auditorium, visit_id: v.id, noted_on: v.watched_on, row: v.row, seat: v.seats, note: text.trim(), shared }),
+    onSuccess: done,
+  })
+  const share = useMutation({ mutationFn: (n) => api.patch(`/rooms/notes/${n.id}`, { shared: !n.shared }), onSuccess: done })
+  const del = useMutation({ mutationFn: (n) => api.delete(`/rooms/notes/${n.id}`), onSuccess: done })
+  return (
+    <details className="fix" onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>Notizen zu {v.auditorium}</summary>
+      <QueryError query={notes} label="Saal-Notizen" />
+      {notes.data && !notes.data.notes.length && <p className="sub">Noch keine Notizen zu diesem Saal.</p>}
+      <ul className="sub" aria-label={`Notizen zu ${v.auditorium}`}>
+        {notes.data?.notes.map((n) => (
+          <li key={n.id}>
+            {fmt(n.noted_on)}{n.row && ` · Reihe ${n.row}`}{n.seat && ` · Sitz ${n.seat}`}{!n.mine && ` · ${n.user_name}`}{n.note && `: ${n.note}`}
+            {n.mine && (
+              <>
+                {' '}<button className="link-btn" onClick={() => share.mutate(n)}>{n.shared ? 'Geteilt (privat machen)' : 'Privat (teilen)'}</button>
+                <button className="link-btn" onClick={() => confirm('Notiz löschen?') && del.mutate(n)}>Löschen</button>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      {mine && (
+        <>
+          <input className="field" aria-label="Notiz zum Saal" placeholder="z. B. Reihe 9 mittig: gute Sicht, Ton laut" value={text} onChange={(e) => setText(e.target.value)} maxLength={500} />
+          <label className="sub"><input type="checkbox" checked={shared} onChange={(e) => setShared(e.target.checked)} /> Mit dem Haushalt teilen</label>
+          <button className="btn" disabled={!text.trim() || add.isPending} onClick={() => add.mutate()}>Notiz speichern</button>
+        </>
+      )}
+      <MutationError mutation={add} />
+      <MutationError mutation={share} />
+      <MutationError mutation={del} />
+    </details>
+  )
+}
+
 export default function Besuche() {
   const { id } = useParams()
   const [params, setParams] = useSearchParams()
@@ -183,6 +232,7 @@ export default function Besuche() {
                   <button className="btn" onClick={() => setSheet({ visit: v })}>Bearbeiten</button>
                 </div>
               )}
+              {v.auditorium && v.snapshot.cinema_key && <RoomNotes v={v} mine={mine} />}
               {mine && <a className="link-btn" href={lb.web} target="_blank" rel="noreferrer">Auf letterboxd.com öffnen</a>}
             </div>
           </section>

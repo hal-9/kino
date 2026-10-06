@@ -1491,5 +1491,46 @@
     "next_ready": [
       "K30"
     ]
+  },
+  "K30": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "scope": "Private-by-default room/seat notes keyed by cinema + normalized room name, optional household sharing, owner-only edit/delete, surfaced in the visit card for that exact cinema+room with date/row/seat. Text/list only.",
+    "commands": {
+      "npm test": "shared 43/43, backend 174/174, frontend 82/82; exit 0",
+      "npm run build": "exit 0"
+    },
+    "modified": [
+      "backend/migrations/022_room_notes.sql (new: room_notes, visit_id ON DELETE SET NULL)",
+      "backend/src/routes/rooms.js (new: GET/POST /rooms/notes, PATCH/DELETE /rooms/notes/:id), backend/src/app.js",
+      "shared/normalize.js (normRoom), shared/normalize.test.js",
+      "frontend/src/screens/Besuche.jsx (RoomNotes details panel per visit with auditorium)",
+      "backend/test/rooms.test.js (new), frontend/src/test/rooms.test.jsx (new)"
+    ],
+    "migration_notes": "022 additive. Populated upgrade from 021 tested (visits/auditoriums unchanged); foreign_key_check/integrity_check ok. Existing visit room/row/seat values are not copied into notes (no guessed history).",
+    "acceptance": {
+      "K30-AC01": "passed (same 'Saal 1' at zoo-palast and delphi never returned together; lookup always cinema_key + room_key)",
+      "K30-AC02": "passed (default shared=false invisible to household member; after sharing visible only in own household; other member PATCH/DELETE -> 404; linking someone else's visit -> 422)",
+      "K30-AC03": "passed (spelling variants 'saal  1' match 'Saal 1' with noted_on/row/seat; unverified alias 'Kino 1' does not match)",
+      "K30-AC04": "passed (blank room/unknown cinema rejected; no best-seat/optimal field anywhere; 1-5 scores only as stated by the user)",
+      "K30-AC05": "passed (edit visible to owner list and household room view; delete removes from both; deleting the visit keeps the note with visit_id null)"
+    },
+    "decisions": [
+      "Room identity = cinema_key + normRoom(label) (case/space/punctuation only). Aliases such as 'Kino 1' = 'Saal 1' are not assumed; raw label kept.",
+      "Notes are separate from provider facts (auditoriums table untouched).",
+      "Staleness is shown via the note date only; renames/refurbishment produce a different room_key rather than silent merging."
+    ],
+    "deferred": [
+      "verified room alias table (owner-curated) and rename handling",
+      "showing matching notes in Programm/MovieSheet before a visit",
+      "in-place text editing UI (API supports PATCH; UI offers share toggle and delete)"
+    ],
+    "gaps": [
+      "real browser check of the notes panel: not run"
+    ],
+    "next_ready": [
+      "K32",
+      "K33"
+    ]
   }
 }
