@@ -1211,5 +1211,52 @@
       "K31",
       "K36"
     ]
+  },
+  "K31": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "reproduced": {
+      "existing parser": "shared/order.js parseOrderText only filled Saal/Reihe/Sitze in the visit form (Besuche), flattened all rows/seats into strings (multi-row tickets lost their pairing), no date/time/link candidates, no comparison with the booking; booking itself had only a ticket link"
+    },
+    "commands": {
+      "npm test": "shared 38/38, backend 152/152, frontend 71/71; exit 0",
+      "npm run build": "exit 0"
+    },
+    "modified": [
+      "shared/order.js (parseTicketText: date/time/auditorium candidates with source span `at`, seats as {row, seat} pairs, http(s) links only, `unresolved` list; checkTicket: date/time match|conflict|unknown in Berlin time, cinema/film match only when named in the text; parseOrderText kept as compat wrapper for Besuche)",
+      "shared/order.test.js",
+      "backend/migrations/019_booking_seats.sql (proposals.ticket_option_id, ticket_auditorium, ticket_seats_json, ticket_by)",
+      "backend/src/routes/proposals.js (PUT /proposals/:id/seats: booked only, revision-conditional, Idempotency-Key, date/time differing from booked snapshot -> 409 'ticket mismatch' + fields, optional http(s) ticket link, history event 'seats' with count only; GET exposes ticket only while ticket_option_id = booked_option_id)",
+      "backend/test/seats.test.js (new)",
+      "frontend/src/components/TicketDetails.jsx (new: paste -> local parse -> editable review fields -> per-field comparison; conflict blocks save; unknown cinema/film requires explicit check; failed save keeps text/fields and retries with the same key)",
+      "frontend/src/screens/Vorschlaege.jsx ('Ticketdaten einfügen' on booked upcoming plans; 'Plätze: … (eingetragen von X)' line; history label)",
+      "frontend/src/test/tickets.test.jsx (new)"
+    ],
+    "migration_notes": "019 additive (4 nullable columns, 2 FKs). Existing bookings keep ticket_link; no ticket details until entered. Populated upgrade from 018 tested; fk/integrity ok.",
+    "acceptance": {
+      "K31-AC01": "passed (existing parseOrderText fixtures still pass; partial text -> unresolved fields, manual completion; invalid date 31.02. not guessed)",
+      "K31-AC02": "passed (server 409 on date/time mismatch, nothing stored; UI blocks conflict and requires explicit check when cinema/film not recognised; no reschedule/movie change ever performed)",
+      "K31-AC03": "passed (stale revision 409, same key replays original, same key + other payload 409, one history event; reschedule invalidates old ticket data instead of rewriting it)",
+      "K31-AC04": "passed (raw text never sent - request body checked; history detail is {seats: n}; .ics has no seat data; no logging added; foreign household 404; javascript: link 422)",
+      "K31-AC05": "passed in jsdom (500 keeps text + fields, retry succeeds with same key; seats stay row/seat pairs; ticket_by records who entered them, seats are not assigned to people)"
+    },
+    "decisions": [
+      "Parsing happens only on the client; the server receives reviewed structured values (date/time only for comparison, not stored).",
+      "Any household member may enter ticket details (existing trusted-household policy); entering person stored as ticket_by.",
+      "Confidence is expressed as found/unresolved per field plus the match/conflict/unknown check; no numeric scores.",
+      "Visit form keeps its paste helper (now via parseTicketText); seats from the booking are not copied to inferred visits because purchaser != attendees."
+    ],
+    "deferred": [
+      "per-person seat assignment",
+      "provider-specific parsers beyond the kinoheld-style 'Saal/Reihe/Sitz' text (no real confirmation fixtures in repo besides the existing one)",
+      "showing ticket details on the upcoming-outing card (shown on the proposal)"
+    ],
+    "gaps": [
+      "real confirmation e-mails from kinoheld/Yorck/UCI not tested (only synthetic text); device check of the sheet: not run"
+    ],
+    "next_ready": [
+      "K23",
+      "K36"
+    ]
   }
 }

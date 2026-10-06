@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { canTransition } from 'shared'
+import { berlinYmd, canTransition } from 'shared'
 import { requireAuth } from '../auth.js'
 import { idempotent } from '../idempotency.js'
 import { eventForProposal, icsCalendar, publicUrl } from '../ics.js'
@@ -17,6 +17,13 @@ const revision = z.number().int().optional()
 const bookSchema = z.object({ option_id: z.number().int(), ticket_link: link.nullish(), revision })
 const ticketSchema = z.object({ ticket_link: link.nullable(), revision })
 const actionSchema = z.object({ revision }).default({})
+// K31: geprüfte Ticketdaten (Datum/Uhrzeit nur zum Abgleich, nicht gespeichert).
+const seatsSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(), time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullish(),
+  auditorium: z.string().trim().max(60).nullish(),
+  seats: z.array(z.object({ row: z.string().trim().max(10).nullish(), seat: z.string().trim().min(1).max(10) })).max(20),
+  ticket_link: link.nullish(), revision,
+})
 // Treffpunkt: Zeitpunkt mit Offset (z. B. 2099-10-13T19:45:00+02:00), Ort und Notiz begrenzt; null löscht.
 const instant = z.string().max(40).regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2})?([+-][0-9]{2}:[0-9]{2}|Z)$/).refine((v) => !Number.isNaN(Date.parse(v)))
 const meetingSchema = z.object({
@@ -53,6 +60,9 @@ export function loadProposals(db, householdId, id, view = 'active') {
     booked_option_id: p.booked_option_id,
     ticket_link: p.ticket_link,
     meeting: { meet_at: p.meet_at, meet_place: p.meet_place, outing_note: p.outing_note },
+    // K31: Ticketdaten gelten nur für die Option, für die sie geprüft wurden.
+    ticket: p.ticket_option_id && p.ticket_option_id === p.booked_option_id
+      ? { auditorium: p.ticket_auditorium, seats: JSON.parse(p.ticket_seats_json ?? '[]'), by: p.ticket_by } : null,
     // K15: feste Kohorte (Nenner); fehlende Stimme = unbeantwortet, nie Ja/Nein.
     participants: cohort.all(p.id).map((r) => r.user_id),
     options: opts.all(p.id).map((o) => {
@@ -285,6 +295,35 @@ export function proposalsRouter(db) {
       // Verlauf ohne den Link selbst (privat).
       db.prepare("INSERT INTO proposal_events (proposal_id, user_id, action, revision, detail_json) VALUES (?, ?, 'ticket', ?, '{}')").run(p.id, req.user.id, p.revision + 1)
     })()
+    res.json(loadProposals(db, req.user.householdId, p.id)[0])
+  })
+
+  // K31: geprüfte Ticketdaten an die Buchung hängen. Abweichendes Datum/Uhrzeit → 409 (nie still umbuchen);
+  // Revision + Idempotency-Key; Verlauf ohne Inhalte.
+  router.put('/proposals/:id/seats', key('seats'), (req, res) => {
+    const p = own(req, res)
+    if (!p) return
+    const parsed = seatsSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(422).json({ error: 'validation failed' })
+    const d = parsed.data
+    if (p.status !== 'booked') return res.status(409).json({ error: 'not booked' })
+    if (d.revision !== undefined && d.revision !== p.revision) return res.status(409).json({ error: 'revision conflict' })
+    const start = new Date(JSON.parse(db.prepare('SELECT snapshot_json FROM proposal_options WHERE id = ?').get(p.booked_option_id).snapshot_json).starts_at)
+    const hm = start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Europe/Berlin' })
+    const fields = [d.date && d.date !== berlinYmd(start) && 'date', d.time && d.time !== hm && 'time'].filter(Boolean)
+    if (fields.length) return res.status(409).json({ error: 'ticket mismatch', fields })
+    const ok = db.transaction(() => {
+      const r = db.prepare(`UPDATE proposals SET ticket_option_id = booked_option_id, ticket_auditorium = ?, ticket_seats_json = ?, ticket_by = ?,
+          ics_seq = ics_seq + CASE WHEN ? IS NOT NULL AND ? IS NOT ticket_link THEN 1 ELSE 0 END, ticket_link = COALESCE(?, ticket_link),
+          revision = revision + 1, updated_at = datetime('now') WHERE id = ? AND revision = ?`)
+        .run(d.auditorium || null, JSON.stringify(d.seats.map(({ row, seat }) => ({ row: row || null, seat }))), req.user.id,
+          d.ticket_link ?? null, d.ticket_link ?? null, d.ticket_link ?? null, p.id, p.revision)
+      if (!r.changes) return false
+      db.prepare("INSERT INTO proposal_events (proposal_id, user_id, action, revision, detail_json) VALUES (?, ?, 'seats', ?, ?)")
+        .run(p.id, req.user.id, p.revision + 1, JSON.stringify({ seats: d.seats.length }))
+      return true
+    })()
+    if (!ok) return res.status(409).json({ error: 'revision conflict' })
     res.json(loadProposals(db, req.user.householdId, p.id)[0])
   })
 

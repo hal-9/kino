@@ -7,6 +7,7 @@ import Sheet from '../components/Sheet.jsx'
 import MovieSheet from '../components/MovieSheet.jsx'
 import MovieHeader from '../components/MovieHeader.jsx'
 import CalendarLink from '../components/CalendarLink.jsx'
+import TicketDetails, { seatsText } from '../components/TicketDetails.jsx'
 import { initial } from '../components/Header.jsx'
 import { nextStep, tally } from '../lib/decision.js'
 import { address, directionsUrl, endText, nextOuting } from '../lib/outing.js'
@@ -21,7 +22,7 @@ function score(o) {
   return v.filter((x) => x === 'yes').length * 10 - v.filter((x) => x === 'no').length
 }
 
-const ACTION = { created: 'vorgeschlagen', book: 'gebucht', reschedule: 'umgebucht', cancel: 'abgesagt', reopen: 'wieder geöffnet', ticket: 'Ticket-Link geändert' }
+const ACTION = { created: 'vorgeschlagen', book: 'gebucht', reschedule: 'umgebucht', cancel: 'abgesagt', reopen: 'wieder geöffnet', ticket: 'Ticket-Link geändert', seats: 'Ticketdaten eingetragen' }
 const stamp = (sql) => new Date(sql.replace(' ', 'T') + 'Z').toLocaleString('de-DE', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })
 // 409 bei Lebenszyklus-Aktionen: jemand anderes war schneller oder der Status passt nicht mehr.
 const conflictText = (e) =>
@@ -107,6 +108,7 @@ function Proposal({ p, members, me, history }) {
   const [link, setLink] = useState('')
   const [info, setInfo] = useState(false)
   const [ticketSheet, setTicketSheet] = useState(false)
+  const [seatSheet, setSeatSheet] = useState(false)
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['proposals'] }), qc.invalidateQueries({ queryKey: ['proposal'] })])
   // Ein Idempotency-Key je geöffneter Aktion; Wiederholung nach Netzabbruch liefert das Original.
   const key = useRef(null)
@@ -193,6 +195,9 @@ function Proposal({ p, members, me, history }) {
       <MovieHeader movie={p.movie} onInfo={() => setInfo(true)} />
       <p className="status-line">{p.status === 'booked' ? '✓ gebucht' : p.status === 'cancelled' ? 'abgesagt' : 'offen'}</p>
       {p.status === 'booked' && meetText(p.meeting ?? {}) && <p className="sub step">Treffpunkt: {meetText(p.meeting)}</p>}
+      {p.status === 'booked' && p.ticket && (
+        <p className="sub step">Plätze: {[p.ticket.auditorium && `Saal ${p.ticket.auditorium}`, seatsText(p.ticket.seats)].filter(Boolean).join(' · ')} (eingetragen von {nameOf(members, p.ticket.by)})</p>
+      )}
       {stepText(nextStep(p, me.id), members) && <p className="sub step">{stepText(nextStep(p, me.id), members)}</p>}
       <div className="card">
         {p.note && <p className="note">{p.note}</p>}
@@ -261,6 +266,7 @@ function Proposal({ p, members, me, history }) {
             <button className="btn" onClick={() => setAbo(true)}>Kalender abonnieren</button>
             {past && <Link className="btn" to="/besuche">Zum Besuch</Link>}
             {!past && <button className="btn" onClick={openMeeting}>Treffpunkt</button>}
+            {!past && <button className="btn" onClick={() => setSeatSheet(true)}>Ticketdaten einfügen</button>}
             {!past && <button className="btn" onClick={openPick}>Umbuchen</button>}
             {!past && <button className="btn" disabled={cancel.isPending} onClick={confirmCancel}>Absagen</button>}
             {!past && <button className="btn" disabled={reopen.isPending} onClick={confirmReopen}>Wieder öffnen</button>}
@@ -344,6 +350,8 @@ function Proposal({ p, members, me, history }) {
           <button className="btn primary" disabled={saveTicket.isPending} onClick={() => saveTicket.mutate()}>Speichern</button>
         </div>
       </Sheet>
+
+      {booked && <TicketDetails p={p} snapshot={booked.snapshot} open={seatSheet} onClose={() => setSeatSheet(false)} onSaved={refresh} />}
 
       <Sheet open={abo} onClose={() => setAbo(false)} label="Kalender abonnieren">
         <h3>Kalender abonnieren</h3>
