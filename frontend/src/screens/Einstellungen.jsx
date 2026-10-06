@@ -28,6 +28,20 @@ export default function Einstellungen() {
     }
   }
 
+  const [syncError, setSyncError] = useState(null)
+  async function resync() {
+    setSyncError(null)
+    try {
+      await api.post('/letterboxd/resync')
+      qc.invalidateQueries({ queryKey: ['settings'] })
+      qc.invalidateQueries({ queryKey: ['visits'] })
+    } catch (err) {
+      setSyncError(err.status === 429 ? 'Gerade erst abgeglichen. Bitte in einer Minute erneut.' : errorText(err))
+    }
+  }
+  const st = settings.data?.letterboxd
+  const day = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('de-DE')
+
   async function logout() {
     await api.post('/logout').catch(() => {})
     qc.clear()
@@ -46,6 +60,20 @@ export default function Einstellungen() {
           <input className="field" aria-label="Letterboxd-Name" placeholder="letterboxd-Name" value={lb} onChange={(e) => { setLb(e.target.value); setSaved(false) }} />
           {lbError && <p className="stale" role="alert">{lbError}</p>}
           <button className="btn primary" onClick={saveLb}>{saved ? 'Gespeichert ✓' : 'Speichern'}</button>
+          {settings.data?.letterboxd_user && (
+            <>
+              <p className="sub" role="status">
+                {st?.attempt_at ? `Letzter Abgleich: ${new Date(st.attempt_at).toLocaleString('de-DE')}` : 'Noch nicht abgeglichen.'}
+                {st?.error && ` · Fehler: ${st.error}`}
+                {!st?.error && st?.from && ` · Feed deckt ${day(st.from)}–${day(st.to)} ab`}
+                {st?.ambiguous > 0 && ` · ${st.ambiguous} Besuch(e) nicht eindeutig zuzuordnen (bitte selbst bewerten)`}
+                {st?.other_account > 0 && ` · ${st.other_account} Bewertung(en) stammen von einem früheren Konto`}
+              </p>
+              <p className="sub">Der Feed enthält nur die letzten Einträge. Ältere Bewertungen bleiben erhalten; eigene Bewertungen am Besuch haben Vorrang.</p>
+              {syncError && <p className="stale" role="alert">{syncError}</p>}
+              <button className="btn" onClick={resync}>Jetzt abgleichen</button>
+            </>
+          )}
         </div>
       </section>
       <section className="group">

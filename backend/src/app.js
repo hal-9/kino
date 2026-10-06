@@ -56,7 +56,7 @@ export function createApp(db, deps = {}) {
   app.use('/api', calendarRouter(db))
   app.use('/api', programRouter(db))
   app.use('/api', proposalsRouter(db))
-  app.use('/api', visitsRouter(db))
+  app.use('/api', visitsRouter(db, deps))
   app.use('/api', statsRouter(db))
   app.use('/api', moviesRouter(db, deps))
 

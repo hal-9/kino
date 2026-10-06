@@ -4,6 +4,7 @@ import { isValidYmd, normTitle } from 'shared'
 import { requireAuth } from '../auth.js'
 import { idempotent } from '../idempotency.js'
 import { materializeVisits } from '../autoVisits.js'
+import { syncRatings, ratingStatus } from '../letterboxd.js'
 
 const ymd = z.string().refine(isValidYmd)
 const fields = {
@@ -13,6 +14,8 @@ const fields = {
   seats: z.string().trim().max(60).nullish(),
   companions: z.array(z.number().int()).max(10).default([]),
   note: z.string().trim().max(500).nullish(),
+  // K20: eigene Bewertung (0,5er-Schritte), null = zurück zum Letterboxd-Wert.
+  manual_rating: z.number().min(0.5).max(5).multipleOf(0.5).nullish(),
 }
 const createSchema = z.object({
   ...fields,
@@ -24,7 +27,7 @@ const createSchema = z.object({
 })
 const patchSchema = z.object(fields).partial()
 
-export function visitsRouter(db) {
+export function visitsRouter(db, { fetch = globalThis.fetch } = {}) {
   const router = Router()
   router.use('/visits', requireAuth(db))
   router.patch('/me', requireAuth(db), (req, res) => {
@@ -35,7 +38,16 @@ export function visitsRouter(db) {
     res.json({ letterboxd_user: value })
   })
   router.get('/settings', requireAuth(db), (req, res) => {
-    res.json(db.prepare('SELECT letterboxd_user FROM users WHERE id = ?').get(req.user.id))
+    const { letterboxd_user } = db.prepare('SELECT letterboxd_user FROM users WHERE id = ?').get(req.user.id)
+    res.json({ letterboxd_user, letterboxd: ratingStatus(db, req.user.id) })
+  })
+  // K20: Abgleich nur des eigenen Kontos, höchstens einmal pro Minute; Fehler stehen im Status.
+  router.post('/letterboxd/resync', requireAuth(db), async (req, res) => {
+    const u = db.prepare('SELECT letterboxd_user, letterboxd_attempt_at FROM users WHERE id = ?').get(req.user.id)
+    if (!u.letterboxd_user) return res.status(422).json({ error: 'no letterboxd account' })
+    if (u.letterboxd_attempt_at && Date.now() - Date.parse(u.letterboxd_attempt_at) < 60_000) return res.status(429).json({ error: 'too many requests' })
+    await syncRatings(db, { fetch, userId: req.user.id })
+    res.json(ratingStatus(db, req.user.id))
   })
 
   const members = (hid) =>
@@ -44,7 +56,8 @@ export function visitsRouter(db) {
   const shape = (r) => ({
     id: r.id, user_id: r.user_id, user_name: r.user_name, proposal_id: r.proposal_id, movie_id: r.movie_id, tmdb_id: r.tmdb_id,
     snapshot: JSON.parse(r.snapshot_json), watched_on: r.watched_on, auditorium: r.auditorium, row: r.row, seats: r.seats,
-    companions: JSON.parse(r.companions_json), letterboxd_rating: r.letterboxd_rating, note: r.note, attendance: r.attendance,
+    companions: JSON.parse(r.companions_json), letterboxd_rating: r.letterboxd_rating, manual_rating: r.manual_rating,
+    rating: r.manual_rating ?? r.letterboxd_rating, note: r.note, attendance: r.attendance,
   })
   const load = (where, ...args) =>
     db
@@ -165,11 +178,12 @@ export function visitsRouter(db) {
       seats: 'seats' in d ? d.seats || null : v.seats,
       note: 'note' in d ? d.note || null : v.note,
       companions: d.companions ? JSON.stringify(validCompanions(d.companions, v.household_id)) : v.companions_json,
+      manual_rating: 'manual_rating' in d ? d.manual_rating : v.manual_rating,
     }
     // Korrektur durch den Besitzer = geprüft: abgeleitete/alte Einträge werden 'confirmed'.
-    db.prepare(`UPDATE visits SET watched_on = ?, auditorium = ?, row = ?, seats = ?, note = ?, companions_json = ?,
+    db.prepare(`UPDATE visits SET watched_on = ?, auditorium = ?, row = ?, seats = ?, note = ?, companions_json = ?, manual_rating = ?,
       attendance = CASE WHEN attendance IN ('inferred', 'legacy') THEN 'confirmed' ELSE attendance END WHERE id = ?`)
-      .run(next.watched_on, next.auditorium, next.row, next.seats, next.note, next.companions, v.id)
+      .run(next.watched_on, next.auditorium, next.row, next.seats, next.note, next.companions, next.manual_rating, v.id)
     res.json(load('v.id = ?', v.id)[0])
   })
 

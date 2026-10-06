@@ -1029,5 +1029,54 @@
       "K31",
       "K36"
     ]
+  },
+  "K20": {
+    "status": "code_complete",
+    "date": "2026-10-06",
+    "reproduced": {
+      "A12 once-ever gate": "source: syncRatings only looked at visits with letterboxd_synced_at IS NULL, so an edited/removed rating on Letterboxd never reached the visit",
+      "approximate matching": "items.find() took the first title/tmdb hit within +-1 day; two entries (rewatch) or two visits silently picked one; a tmdb mismatch with the same title still matched",
+      "no status": "errors only logged; no attempt/success time, no covered range, no manual resync, no manual override"
+    },
+    "commands": {
+      "new backend tests (ratings.test.js) against pre-K20 source": "8/8 failed",
+      "npm test": "shared 28/28, backend 146/146, frontend 64/64; exit 0",
+      "npm run build": "exit 0"
+    },
+    "modified": [
+      "backend/migrations/018_letterboxd_sync.sql (visits.letterboxd_entry, letterboxd_account, manual_rating CHECK 0.5-5; users.letterboxd_attempt_at/ok_at/error/status_json; backfill account for old imports)",
+      "backend/src/letterboxd.js (parse guid + unrated entries; linked visits update by guid only for the same account; absence keeps value; unlinked visits link only on a unique visit<->entry pair, tmdb ids decide when both known; per-user status; ratingStatus)",
+      "backend/src/routes/visits.js (PATCH manual_rating, null = reset; shape adds manual_rating + effective rating; GET /settings returns letterboxd status; POST /letterboxd/resync own account only, 1/min -> 429)",
+      "backend/src/app.js (visitsRouter gets injected fetch)",
+      "backend/test/ratings.test.js (new)",
+      "frontend/src/screens/Besuche.jsx (effective rating with 'eigene Bewertung' label; own-rating select in edit sheet)",
+      "frontend/src/screens/Einstellungen.jsx (status: last attempt, error, covered feed range, ambiguous/other-account counts, finite-feed note, 'Jetzt abgleichen')",
+      "frontend/src/test/ratings.test.jsx (new)"
+    ],
+    "migration_notes": "018 additive (7 columns). Old imported ratings keep their value and get letterboxd_account = current account; entry stays NULL so the next sync can link them by the unique-pair rule (only overwritten when a unique entry is found). Fresh + populated upgrade from 017 tested; fk/integrity ok. Older code ignores the columns.",
+    "acceptance": {
+      "K20-AC01": "passed (same guid: 3 -> 4.5 -> removed (null))",
+      "K20-AC02": "passed (entry missing from later feed and HTTP 500 keep the value; error recorded)",
+      "K20-AC03": "passed (two entries/two visits -> none linked, counted ambiguous; tmdb mismatch with same title not linked; after account change old link frozen, not remapped, counted other_account)",
+      "K20-AC04": "passed (manual_rating survives later syncs, effective rating = manual; null resets; owner-only 403; invalid step 422)",
+      "K20-AC05": "passed (resync 401 unauthenticated, only own account synced, 2nd call within 60 s -> 429, failure shown in status and retry possible); UI tested in jsdom"
+    },
+    "decisions": [
+      "Entry identity = RSS guid. 'Bounded' = the RSS window itself (Letterboxd returns the latest entries only); no pagination/scraping.",
+      "Ambiguous rewatches are not linked; the user rates manually (manual_rating). No review queue UI.",
+      "Account switch: links of the old account stay frozen with their value; no automatic relink.",
+      "Manual rating edit goes through owner PATCH (and, like other owner corrections, marks inferred/legacy attendance confirmed)."
+    ],
+    "deferred": [
+      "explicit 'relink to new account' action for visits linked to a previous account",
+      "picking one of several ambiguous entries in the UI",
+      "Letterboxd Retry-After/backoff for the timer sync (timer runs at most a few times per day; manual resync is limited to 1/min)"
+    ],
+    "gaps": [
+      "live Letterboxd RSS not fetched (fake fetch only); real device check of Einstellungen/Besuche: not run"
+    ],
+    "next_ready": [
+      "K21"
+    ]
   }
 }

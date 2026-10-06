@@ -15,6 +15,7 @@ const ATTENDANCE = {
   confirmed: 'Bestätigt',
 }
 const stars = (r) => '★'.repeat(Math.floor(r)) + (r % 1 ? '½' : '')
+const RATINGS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5]
 
 function letterboxdLinks(v) {
   const t = `${v.snapshot.title} ${v.snapshot.year ?? ''}`.trim()
@@ -39,7 +40,7 @@ function VisitSheet({ open, onClose, members, me, init, visit }) {
       title: s?.title ?? '', year: s?.year ?? '', cinema_key: s?.cinema_key ?? '',
       watched_on: visit?.watched_on ?? (s?.starts_at ? s.starts_at.slice(0, 10) : today()),
       auditorium: visit?.auditorium ?? s?.auditorium ?? '', row: visit?.row ?? '', seats: visit?.seats ?? '',
-      companions: visit?.companions ?? [], note: visit?.note ?? '', paste: '',
+      companions: visit?.companions ?? [], note: visit?.note ?? '', paste: '', manual_rating: visit?.manual_rating ?? '',
     })
   }, [open, visit, init])
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }))
@@ -49,7 +50,7 @@ function VisitSheet({ open, onClose, members, me, init, visit }) {
   const save = useMutation({
     mutationFn: () => {
       const body = { watched_on: f.watched_on, auditorium: f.auditorium || null, row: f.row || null, seats: f.seats || null, companions: f.companions, note: f.note || null }
-      if (visit) return api.patch(`/visits/${visit.id}`, body)
+      if (visit) return api.patch(`/visits/${visit.id}`, { ...body, manual_rating: f.manual_rating === '' ? null : Number(f.manual_rating) })
       if (init?.proposal_id) return api.post('/visits', { ...body, proposal_id: init.proposal_id }, { idempotencyKey: key })
       return api.post('/visits', { ...body, title: f.title, year: f.year ? Number(f.year) : null, cinema_key: f.cinema_key }, { idempotencyKey: key })
     },
@@ -88,6 +89,12 @@ function VisitSheet({ open, onClose, members, me, init, visit }) {
         ))}
       </div>
       <input className="field" aria-label="Notiz" placeholder="Notiz" value={f.note ?? ''} onChange={set('note')} maxLength={500} />
+      {visit && (
+        <select className="field" aria-label="Eigene Bewertung" value={f.manual_rating ?? ''} onChange={set('manual_rating')}>
+          <option value="">{visit.letterboxd_rating != null ? `Letterboxd-Wert (${stars(visit.letterboxd_rating)})` : 'Keine eigene Bewertung'}</option>
+          {RATINGS.map((r) => <option key={r} value={r}>{stars(r)}</option>)}
+        </select>
+      )}
       <MutationError mutation={save} />
       <MutationError mutation={del} />
       <div className="sheet-actions">
@@ -162,7 +169,7 @@ export default function Besuche() {
               <p><strong>{v.snapshot.cinema_name}</strong>{[v.auditorium, v.row && `Reihe ${v.row}`, v.seats && `Sitz ${v.seats}`].filter(Boolean).length > 0 && ' · ' + [v.auditorium, v.row && `Reihe ${v.row}`, v.seats && `Sitz ${v.seats}`].filter(Boolean).join(', ')}</p>
               <small className="muted">{[v.user_name, ...v.companions.map(name)].filter(Boolean).join(', ')}{v.note && ` · ${v.note}`}</small>
               {ATTENDANCE[v.attendance] && <small className="att">{ATTENDANCE[v.attendance]}</small>}
-              {v.letterboxd_rating != null && <p className="stars">{stars(v.letterboxd_rating)}</p>}
+              {v.rating != null && <p className="stars">{stars(v.rating)}{v.manual_rating != null && <small className="muted"> eigene Bewertung</small>}</p>}
               {mine && (v.attendance === 'inferred' || v.attendance === 'legacy') && (
                 <div className="sheet-actions">
                   <button className="btn" disabled={attend.isPending} onClick={() => attend.mutate({ id: v.id, action: 'confirm' })}>Ich war dabei</button>
