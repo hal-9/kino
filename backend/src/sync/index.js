@@ -12,6 +12,7 @@ import * as uci from './uci.js'
 import * as berlinde from './berlinde.js'
 import * as tmdb from '../tmdb.js'
 import * as letterboxd from '../letterboxd.js'
+import { detectRadar } from '../radar.js'
 
 const CINEMAS_JSON = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'data', 'cinemas.json')
 const ADAPTERS = { kinoheld, yorck, zoopalast, uci, berlinde }
@@ -375,6 +376,12 @@ export async function runSync(db, { fetch = createFetch(), log = console.log, ad
     holdLease(db, lease)
     await tmdb.enrich(db, { fetch, log }).catch((e) => log(`tmdb: ${e.message}`))
     await letterboxd.syncRatings(db, { fetch, log }).catch((e) => log(`letterboxd: ${e.message}`))
+    // K29: Radar-Ereignisse nach dem Import erkennen (Zustellung in der App beim Abruf von /radar; Fehler stoppen den Sync nicht).
+    try {
+      detectRadar(db)
+    } catch (e) {
+      log(`radar: ${e.message}`)
+    }
     return { ok, rows: total }
   } catch (e) {
     if (!(e instanceof LeaseLost)) throw e

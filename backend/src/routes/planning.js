@@ -28,12 +28,12 @@ export function planningRouter(db) {
   router.get('/watchlist', (req, res) => {
     const items = db
       .prepare(
-        `SELECT w.movie_id, w.expires_on, w.created_at, m.title, m.year, m.poster_url,
+        `SELECT w.movie_id, w.expires_on, w.created_at, w.radar_muted, m.title, m.year, m.poster_url,
            (SELECT COUNT(*) FROM screenings s WHERE s.movie_id = w.movie_id AND s.withdrawn_at IS NULL AND datetime(s.starts_at) > datetime(?)) AS upcoming
          FROM watchlist w JOIN movies m ON m.id = w.movie_id WHERE w.user_id = ? ORDER BY w.created_at DESC, w.movie_id`
       )
       .all(new Date().toISOString(), req.user.id)
-      .map((w) => ({ ...w, expired: Boolean(w.expires_on && w.expires_on < berlinYmd()) }))
+      .map((w) => ({ ...w, radar_muted: Boolean(w.radar_muted), expired: Boolean(w.expires_on && w.expires_on < berlinYmd()) }))
     res.json({ items })
   })
 

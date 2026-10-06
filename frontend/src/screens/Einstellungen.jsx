@@ -1,12 +1,47 @@
 import { useEffect, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api, errorText } from '../api.js'
-import { QueryError } from '../components/QueryStatus.jsx'
+import { MutationError, QueryError } from '../components/QueryStatus.jsx'
 import CalendarLink from '../components/CalendarLink.jsx'
 import { clearOfflineData } from '../lib/offline.js'
 
 const stale = (s) => !s.last_ok_at || Date.now() - new Date(s.last_ok_at) > 36 * 3600_000
+
+// K29: Einwilligung für das Kino-Radar (nur Hinweise in der App, kein Push/E-Mail), Ruhezeit, Tageslimit, Zustellstatus.
+function RadarSettings() {
+  const qc = useQueryClient()
+  const radar = useQuery({ queryKey: ['radar'], queryFn: () => api.get('/radar') })
+  const [f, setF] = useState(null)
+  useEffect(() => { if (radar.data?.settings) setF({ ...radar.data.settings, quiet_start: radar.data.settings.quiet_start ?? '', quiet_end: radar.data.settings.quiet_end ?? '' }) }, [radar.data])
+  const save = useMutation({
+    mutationFn: (next) => api.put('/radar/settings', { enabled: next.enabled, quiet_start: next.quiet_start || null, quiet_end: next.quiet_end || null, daily_cap: Number(next.daily_cap) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['radar'] }),
+  })
+  const o = radar.data?.outbox ?? {}
+  return (
+    <section className="group">
+      <h2 className="group-title">Kino-Radar</h2>
+      <div className="card pad">
+        <QueryError query={radar} label="Radar" />
+        {f && (
+          <>
+            <p className="sub">Hinweise nur hier in der App (Planen), wenn ein gemerkter Film ins Programm kommt oder sich eure Buchung ändert. Keine Push-Nachrichten, keine E-Mails.</p>
+            <label className="sub"><input type="checkbox" checked={f.enabled} onChange={(e) => save.mutate({ ...f, enabled: e.target.checked })} /> Radar-Hinweise erhalten</label>
+            <div className="two">
+              <label className="sub">Ruhe ab <input className="field" type="time" aria-label="Ruhezeit ab" value={f.quiet_start} onChange={(e) => setF({ ...f, quiet_start: e.target.value })} /></label>
+              <label className="sub">Ruhe bis <input className="field" type="time" aria-label="Ruhezeit bis" value={f.quiet_end} onChange={(e) => setF({ ...f, quiet_end: e.target.value })} /></label>
+            </div>
+            <label className="sub">Höchstens pro Tag <input className="field" type="number" min="1" max="20" aria-label="Höchstens pro Tag" value={f.daily_cap} onChange={(e) => setF({ ...f, daily_cap: e.target.value })} /></label>
+            <MutationError mutation={save} />
+            <button className="btn" disabled={save.isPending} onClick={() => save.mutate(f)}>Radar-Einstellungen speichern</button>
+            {(o.pending > 0 || o.failed > 0) && <p className="sub" role="status">{o.pending ?? 0} wartend{o.failed ? ` · ${o.failed} nicht zustellbar` : ''}</p>}
+          </>
+        )}
+      </div>
+    </section>
+  )
+}
 
 export default function Einstellungen() {
   const navigate = useNavigate()
@@ -98,6 +133,7 @@ export default function Einstellungen() {
           <p className="sub">Nur Zahlen dieses Haushalts aus vorhandenen Daten, ohne Notizen oder Tickets. Kleine Zahlen zeigen Tendenzen, keine Ursachen.</p>
         </div>
       </section>
+      <RadarSettings />
       <section className="group">
         <h2 className="group-title">Kalender-Abo</h2>
         <div className="card pad">

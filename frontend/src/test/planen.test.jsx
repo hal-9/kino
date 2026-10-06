@@ -33,7 +33,7 @@ function stub(extra = {}) {
     if (u === '/planning') return json(planning)
     if (u === '/cinemas') return json({ cinemas: [{ key: 'zoo-palast', name: 'Zoo Palast', is_favorite: true }] })
     if (u === '/planning/prefs') return json({})
-    if (u === '/me') return json({ id: 1, name: 'tuncay' })
+    if (u === '/me') return json({ id: 1, name: 'tuncay', household: { name: 'Crew' } })
     return json({ error: 'not found' }, 404)
   })
   return calls
@@ -86,5 +86,28 @@ describe('K28 Nächster Kinoabend', () => {
     const draft = JSON.parse(sessionStorage.getItem('kino.proposalDraft'))
     expect(draft).toMatchObject({ movie: { id: 7, title: 'Digger' }, shows: [{ id: 11 }], note: '' })
     expect(calls.filter((c) => c.method !== 'GET')).toEqual([])
+  })
+})
+
+describe('K29 Radar', () => {
+  it('Posteingang zeigt interne Links; Einwilligung wird ausdrücklich gesendet', async () => {
+    const radar = { settings: { enabled: true, quiet_start: null, quiet_end: null, daily_cap: 5 }, outbox: { delivered: 1 },
+      inbox: [{ id: 4, kind: 'booked_change', title: 'Digger', field: 'auditorium', certainty: 'confirmed', link: '/vorschlaege/3', read_at: null }] }
+    stub({ '/radar': radar })
+    const { el } = await renderScreen(<Planen />)
+    await waitFor(() => el.textContent.includes('Änderung an eurer Buchung: Saal'))
+    expect(el.querySelector('a[href="/vorschlaege/3"]')).not.toBeNull()
+  })
+
+  it('Einstellungen: Haken setzt enabled', async () => {
+    const { default: Einstellungen } = await import('../screens/Einstellungen.jsx')
+    const calls = stub({ '/radar/settings': {}, '/radar': { settings: { enabled: false, quiet_start: null, quiet_end: null, daily_cap: 5 }, outbox: {}, inbox: [] } })
+    const { el } = await renderScreen(<Einstellungen />)
+    await waitFor(() => el.textContent.includes('Radar-Hinweise erhalten'))
+    expect(el.textContent).toContain('Keine Push-Nachrichten, keine E-Mails')
+    const box = [...el.querySelectorAll('label')].find((l) => l.textContent.includes('Radar-Hinweise erhalten')).querySelector('input')
+    await act(async () => box.click())
+    await waitFor(() => calls.some((c) => c.u === '/radar/settings'))
+    expect(calls.find((c) => c.u === '/radar/settings').body).toEqual({ enabled: true, quiet_start: null, quiet_end: null, daily_cap: 5 })
   })
 })

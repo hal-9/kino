@@ -9,6 +9,7 @@ import { moviesRouter } from './routes/movies.js'
 import { statsRouter } from './routes/stats.js'
 import { calendarRouter } from './routes/calendar.js'
 import { planningRouter } from './routes/planning.js'
+import { radarRouter } from './routes/radar.js'
 
 export function createApp(db, deps = {}) {
   const app = express()
@@ -61,6 +62,7 @@ export function createApp(db, deps = {}) {
   app.use('/api', statsRouter(db))
   app.use('/api', moviesRouter(db, deps))
   app.use('/api', planningRouter(db))
+  app.use('/api', radarRouter(db, deps))
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }))
   app.use((err, req, res, next) => {

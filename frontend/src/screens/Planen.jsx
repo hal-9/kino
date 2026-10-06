@@ -13,6 +13,7 @@ function Watchlist() {
   const qc = useQueryClient()
   const list = useQuery({ queryKey: ['watchlist'], queryFn: () => api.get('/watchlist') })
   const remove = useMutation({ mutationFn: (id) => api.delete(`/watchlist/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['watchlist'] }) })
+  const mute = useMutation({ mutationFn: (w) => api.put(`/radar/watch/${w.movie_id}`, { muted: !w.radar_muted }), onSuccess: () => qc.invalidateQueries({ queryKey: ['watchlist'] }) })
   const items = list.data?.items ?? []
   return (
     <section className="group">
@@ -29,10 +30,12 @@ function Watchlist() {
                 {w.expires_on && !w.expired && ` · bis ${new Date(`${w.expires_on}T12:00:00`).toLocaleDateString('de-DE')}`}
               </small>
             </span>
+            <button className="mini" aria-pressed={w.radar_muted} aria-label={`Radar stumm: ${w.title}`} onClick={() => mute.mutate(w)}>{w.radar_muted ? 'Stumm' : 'Radar an'}</button>
             <button className="mini" aria-label={`Von Merkliste entfernen: ${w.title}`} onClick={() => remove.mutate(w.movie_id)}>Entfernen</button>
           </div>
         ))}
         <MutationError mutation={remove} />
+        <MutationError mutation={mute} />
       </div>
     </section>
   )
@@ -211,9 +214,39 @@ function NextNight() {
   )
 }
 
+const KIND = { watch_available: 'Läuft laut Programm', booked_change: 'Änderung an eurer Buchung' }
+const FIELD = { starts_at: 'Uhrzeit', cinema: 'Kino', version: 'Fassung', auditorium: 'Saal', availability: 'Verfügbarkeit' }
+
+// K29: Radar-Posteingang (nur in der App). Ohne Einwilligung nur ein Hinweis auf die Einstellungen.
+function RadarInbox() {
+  const qc = useQueryClient()
+  const radar = useQuery({ queryKey: ['radar'], queryFn: () => api.get('/radar') })
+  const read = useMutation({ mutationFn: (id) => api.post(`/radar/${id}/read`), onSuccess: () => qc.invalidateQueries({ queryKey: ['radar'] }) })
+  const r = radar.data
+  if (!r) return <QueryError query={radar} label="Radar" />
+  if (!r.settings.enabled && !r.inbox.length) return null
+  return (
+    <section className="group">
+      <h2 className="group-title">Radar</h2>
+      <div className="card">
+        {!r.inbox.length && <p className="note pad">Noch keine Hinweise.</p>}
+        {r.inbox.map((e) => (
+          <Link key={e.id} className="show" to={e.link} onClick={() => !e.read_at && read.mutate(e.id)}>
+            <span className="show-main">
+              <strong>{e.read_at ? '' : '● '}{e.title}</strong>
+              <small>{KIND[e.kind]}{e.field ? `: ${FIELD[e.field] ?? e.field}${e.certainty === 'uncertain' ? ' (unsicher)' : ''}` : ''}</small>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 export default function Planen() {
   return (
     <>
+      <RadarInbox />
       <NextNight />
       <Watchlist />
       <Preferences />
