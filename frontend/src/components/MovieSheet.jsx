@@ -41,24 +41,6 @@ function Metadata({ m }) {
   )
 }
 
-// K27: Merken = eigenes Interesse, keine Stimme und keine Buchung.
-function WatchButton({ m }) {
-  const qc = useQueryClient()
-  const toggle = useMutation({
-    mutationFn: () => (m.watchlisted ? api.delete(`/watchlist/${m.id}`) : api.put(`/watchlist/${m.id}`, {})),
-    onSuccess: () => {
-      qc.setQueryData(['movie', m.id], (old) => old && { ...old, watchlisted: !m.watchlisted })
-      qc.invalidateQueries({ queryKey: ['watchlist'] })
-    },
-  })
-  return (
-    <>
-      <button className="btn" aria-pressed={m.watchlisted} disabled={toggle.isPending} onClick={() => toggle.mutate()}>{m.watchlisted ? '✓ Gemerkt' : 'Merken'}</button>
-      <MutationError mutation={toggle} />
-    </>
-  )
-}
-
 const fmtDate = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' }) : null)
 
 // Film-Details (TMDB, serverseitig gecacht). movieId = null → geschlossen.
@@ -93,7 +75,6 @@ export default function MovieSheet({ movieId, onClose }) {
             {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
           </dl>
           <div className="sheet-actions">
-            <WatchButton m={m} />
             <a className="btn primary" href={m.letterboxd_url} target="_blank" rel="noreferrer">Auf Letterboxd ansehen</a>
           </div>
         </>

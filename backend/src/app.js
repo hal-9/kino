@@ -8,8 +8,6 @@ import { visitsRouter } from './routes/visits.js'
 import { moviesRouter } from './routes/movies.js'
 import { statsRouter } from './routes/stats.js'
 import { calendarRouter } from './routes/calendar.js'
-import { planningRouter } from './routes/planning.js'
-import { radarRouter } from './routes/radar.js'
 import { roomsRouter } from './routes/rooms.js'
 import { ticketFilesRouter } from './routes/ticketFiles.js'
 import { reactionsRouter } from './routes/reactions.js'
@@ -64,8 +62,6 @@ export function createApp(db, deps = {}) {
   app.use('/api', visitsRouter(db, deps))
   app.use('/api', statsRouter(db))
   app.use('/api', moviesRouter(db, deps))
-  app.use('/api', planningRouter(db))
-  app.use('/api', radarRouter(db, deps))
   app.use('/api', roomsRouter(db))
   app.use('/api', ticketFilesRouter(db))
   app.use('/api', reactionsRouter(db))

@@ -55,14 +55,13 @@ describe('K35 Reaktionen', () => {
     expect((await request(app).get(`/api/visits/${v1}/reactions`).set('Cookie', eve)).status).toBe(404)
   })
 
-  it('AC03: Spoiler stehen nicht in Besuchsliste, Wrapped, Kalender-Feed oder Radar', async () => {
+  it('AC03: Spoiler stehen nicht in Besuchsliste, Wrapped, Vorschlag oder Kalender-Feed', async () => {
     await put(v1, { line: SPOILER, spoiler: true, visibility: 'household' }, c1).expect(200)
     const outputs = [
       (await request(app).get('/api/visits').set('Cookie', c2)).text,
       (await request(app).get('/api/stats/wrapped?year=2099&scope=group').set('Cookie', c2)).text,
       (await request(app).get(`/api/proposals/${pid}`).set('Cookie', c2)).text,
       (await request(app).get(`/api/proposals/${pid}.ics`).set('Cookie', c2)).text,
-      (await request(app).get('/api/radar').set('Cookie', c2)).text,
     ]
     const feed = (await request(app).post('/api/cal/token').set('Cookie', c2).send({})).body.https_url
     outputs.push((await request(app).get(new URL(feed).pathname)).text)
